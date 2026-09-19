@@ -1,0 +1,30 @@
+# Environment variables (NEVER COMMIT SENSITIVE CREDENTIALS)
+.env
+.env.local
+.env.*.local
+
+# Node modules & build artifacts
+node_modules/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Other local workspace projects
+hero-trader/
+sniper-bot/
+still-bot/
+still-trader/
+wallet-watcher/
+crawler.js
+jobs.json
+index.html
+script.js
+style.css
+test_access.txt
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
