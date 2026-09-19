@@ -1,83 +1,69 @@
 -- ==============================================================================
 -- WifhPaws Telegram Bot Database Schema Migration
--- Run this script in your Supabase SQL Editor: https://supabase.com/dashboard/project/_/sql
+-- Run this in your Supabase SQL Editor: https://supabase.com/dashboard/project/vwqfrofbwlsbroevjhib/sql/new
 -- ==============================================================================
 
--- 1. Create the 'users' table
+-- 1. Ensure 'users' table has both 'points' and 'paw_points' columns
 CREATE TABLE IF NOT EXISTS public.users (
     telegram_id BIGINT PRIMARY KEY,
     username TEXT,
     points INT NOT NULL DEFAULT 0,
+    paw_points INT NOT NULL DEFAULT 0,
     wallet_address TEXT,
     last_awarded_at TIMESTAMPTZ DEFAULT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 2. Indexes for high performance
--- Fast query for /leaderboard
-CREATE INDEX IF NOT EXISTS idx_users_points_desc ON public.users (points DESC);
+-- In case 'users' table already exists, ensure 'paw_points' column is present
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS paw_points INT DEFAULT 0;
 
--- Fast lookup for /airdrop @handle
+-- Sync any existing points to paw_points if paw_points is 0
+UPDATE public.users SET paw_points = points WHERE (paw_points IS NULL OR paw_points = 0) AND points > 0;
+
+-- 2. Create 'user_wallets' table for Custodial Wallets
+CREATE TABLE IF NOT EXISTS public.user_wallets (
+    telegram_id BIGINT PRIMARY KEY,
+    public_address TEXT NOT NULL UNIQUE,
+    encrypted_private_key TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 3. Create 'dynamic_keywords' table for Admin-managed rewarded keywords
+CREATE TABLE IF NOT EXISTS public.dynamic_keywords (
+    keyword TEXT PRIMARY KEY,
+    points_reward INT NOT NULL DEFAULT 10,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Insert default trigger keywords
+INSERT INTO public.dynamic_keywords (keyword, points_reward)
+VALUES 
+    ('gm', 10),
+    ('thanks', 10),
+    ('thank you', 10),
+    ('ty', 10),
+    ('lfg', 10)
+ON CONFLICT (keyword) DO NOTHING;
+
+-- 4. Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_users_paw_points_desc ON public.users (paw_points DESC);
 CREATE INDEX IF NOT EXISTS idx_users_username_lower ON public.users (LOWER(username));
+CREATE INDEX IF NOT EXISTS idx_user_wallets_address ON public.user_wallets (public_address);
 
--- 3. Stored Procedure for Atomic Points Increment & Upsert
--- This prevents race conditions when awarding points or executing airdrops
-CREATE OR REPLACE FUNCTION public.increment_user_points(
-    p_telegram_id BIGINT,
-    p_username TEXT,
-    p_points INT,
-    p_last_awarded_at TIMESTAMPTZ DEFAULT NULL
-)
-RETURNS public.users
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-    v_result public.users;
-BEGIN
-    INSERT INTO public.users (
-        telegram_id,
-        username,
-        points,
-        last_awarded_at,
-        created_at,
-        updated_at
-    )
-    VALUES (
-        p_telegram_id,
-        p_username,
-        p_points,
-        COALESCE(p_last_awarded_at, NOW()),
-        NOW(),
-        NOW()
-    )
-    ON CONFLICT (telegram_id) DO UPDATE
-    SET
-        username = COALESCE(EXCLUDED.username, public.users.username),
-        points = public.users.points + EXCLUDED.points,
-        last_awarded_at = CASE 
-            WHEN p_last_awarded_at IS NOT NULL THEN p_last_awarded_at 
-            ELSE public.users.last_awarded_at 
-        END,
-        updated_at = NOW()
-    RETURNING * INTO v_result;
+-- 5. Row Level Security (RLS)
+ALTER TABLE public.user_wallets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dynamic_keywords ENABLE ROW LEVEL SECURITY;
 
-    RETURN v_result;
-END;
-$$;
+CREATE POLICY "Allow public access to user_wallets" 
+ON public.user_wallets 
+FOR ALL 
+USING (true)
+WITH CHECK (true);
 
--- 4. Enable Row Level Security (RLS)
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-
--- Allow read/write access
-CREATE POLICY "Allow public read access to leaderboard" 
-ON public.users 
-FOR SELECT 
-USING (true);
-
-CREATE POLICY "Allow authenticated/service role full access" 
-ON public.users 
+CREATE POLICY "Allow public access to dynamic_keywords" 
+ON public.dynamic_keywords 
 FOR ALL 
 USING (true)
 WITH CHECK (true);
