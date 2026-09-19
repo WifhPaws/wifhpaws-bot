@@ -537,6 +537,52 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'healthy', bot: 'WifhPaws' }));
     }
+  } else if (req.url?.startsWith('/api/balance')) {
+    (async () => {
+      try {
+        const urlObj = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+        const telegramId = Number(urlObj.searchParams.get('telegram_id'));
+
+        if (!telegramId) {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ success: false, error: 'Missing or invalid telegram_id' }));
+        }
+
+        const wallet = await getOrCreateWallet(telegramId);
+        let ethBalance = '0.0000';
+        try {
+          const ethBalanceWei = await provider.getBalance(wallet.public_address);
+          ethBalance = parseFloat(ethers.formatEther(ethBalanceWei)).toFixed(4);
+        } catch (e: any) {
+          console.warn('RPC ETH balance error:', e.message);
+        }
+
+        let wifhBalance = '0.0';
+        if (WIFH_CONTRACT_ADDRESS) {
+          try {
+            const tokenContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, provider);
+            const rawBalance = await tokenContract.balanceOf(wallet.public_address);
+            const decimals = await tokenContract.decimals();
+            wifhBalance = ethers.formatUnits(rawBalance, decimals);
+          } catch (e) {
+            wifhBalance = '0.0';
+          }
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(
+          JSON.stringify({
+            success: true,
+            address: wallet.public_address,
+            eth_balance: ethBalance,
+            wifh_balance: wifhBalance,
+          })
+        );
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    })();
   } else {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found');

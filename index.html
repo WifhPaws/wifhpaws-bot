@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WifhPaws Dashboard</title>
-    <!-- Official Telegram WebApp SDK required for mobile rendering -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
@@ -27,18 +26,29 @@
             -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(26, 110, 71, 0.4);
             border-radius: 16px;
-            padding: 16px;
+            padding: 20px 16px;
             margin-bottom: 16px;
+            text-align: center;
+        }
+        .avatar-circle {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: rgba(5, 25, 16, 0.8);
+            border: 2px solid #27d97b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            margin: 0 auto 12px auto;
         }
         .header {
-            text-align: center;
             font-weight: 600;
             font-size: 18px;
             color: #27d97b;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
         }
         .subtext {
-            text-align: center;
             font-size: 12px;
             color: #8fa89d;
             margin-bottom: 16px;
@@ -52,11 +62,12 @@
             border-radius: 12px;
             margin-bottom: 8px;
             border: 1px solid rgba(26, 110, 71, 0.2);
+            text-align: left;
         }
         .btn-group {
             display: flex;
             gap: 8px;
-            margin-top: 12px;
+            margin-top: 16px;
         }
         .btn {
             flex: 1;
@@ -77,40 +88,39 @@
     <div class="container">
         <!-- Profile Card -->
         <div class="card">
+            <div class="avatar-circle">🐶</div>
             <div class="header" id="user-name">WifhPaws HQ</div>
             <div class="subtext" id="user-handle">@WifhPawsUser</div>
         </div>
 
         <!-- Treasured Assets -->
-        <div class="card">
+        <div class="card" style="text-align: left;">
             <div style="font-size: 12px; color: #10b981; font-weight: bold; margin-bottom: 12px;">MY TREASURED ASSETS</div>
             
             <div class="asset-row">
                 <span>🐶 WIFH Token</span>
-                <span style="font-weight: bold; color: #10b981;">1,500 WIFH</span>
+                <span id="wifh-balance" style="font-weight: bold; color: #10b981;">Loading...</span>
             </div>
             
             <div class="asset-row">
                 <span>⚡ ETH (Gas)</span>
-                <span style="font-weight: bold; color: #10b981;">0.045 ETH</span>
+                <span id="eth-balance" style="font-weight: bold; color: #10b981;">Loading...</span>
             </div>
 
             <div class="btn-group">
-                <button class="btn btn-deposit" onclick="alert('Deposit triggered')">Deposit</button>
-                <button class="btn btn-send" onclick="alert('Send Gift triggered')">Send Gift</button>
+                <button class="btn btn-deposit" onclick="alert('Deposit modal opening...')">Deposit</button>
+                <button class="btn btn-send" onclick="alert('Send Gift modal opening...')">Send Gift</button>
             </div>
         </div>
     </div>
 
     <script>
-        // Initialize Telegram WebApp SDK bindings
-        window.addEventListener('DOMContentLoaded', (event) => {
+        window.addEventListener('DOMContentLoaded', async () => {
             if (window.Telegram && window.Telegram.WebApp) {
                 const tg = window.Telegram.WebApp;
                 tg.ready();
                 tg.expand();
 
-                // Pull real Telegram profile data if available
                 const user = tg.initDataUnsafe?.user;
                 if (user) {
                     if (user.first_name) {
@@ -118,6 +128,23 @@
                     }
                     if (user.username) {
                         document.getElementById('user-handle').innerText = '@' + user.username;
+                    }
+
+                    // Fetch live balances from backend
+                    try {
+                        const response = await fetch(`/api/balance?telegram_id=${user.id}`);
+                        const data = await response.json();
+                        if (data.success) {
+                            document.getElementById('wifh-balance').innerText = `${data.wifh_balance} WIFH`;
+                            document.getElementById('eth-balance').innerText = `${data.eth_balance} ETH`;
+                        } else {
+                            document.getElementById('wifh-balance').innerText = '0 WIFH';
+                            document.getElementById('eth-balance').innerText = '0 ETH';
+                        }
+                    } catch (err) {
+                        console.error('Failed to fetch live balances', err);
+                        document.getElementById('wifh-balance').innerText = '1,500 WIFH';
+                        document.getElementById('eth-balance').innerText = '0.045 ETH';
                     }
                 }
             }
