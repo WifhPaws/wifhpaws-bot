@@ -28,6 +28,9 @@ if (!BOT_TOKEN || !SUPABASE_URL || !SUPABASE_ANON_KEY || !WALLET_ENCRYPTION_KEY)
 }
 
 const bot = new Telegraf(BOT_TOKEN);
+bot.catch((err: any, ctx) => {
+  console.error(`⚠️ Telegram error in ${ctx.updateType}:`, err?.message || err);
+});
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const provider = new ethers.JsonRpcProvider(ROBINHOOD_RPC_URL);
 
@@ -149,8 +152,32 @@ async function getTargetUser(ctx: Context): Promise<{ id: number; username?: str
 // ==========================================
 
 bot.command('start', async (ctx) => {
-  const welcomeText = `🐾 *Welcome to WifhPaws Bot\!*\n\nEngage in community chats to earn hidden Paw Points and manage your Robinhood Chain EVM wallet\.\n\n📌 *Available Commands:*\n• \`/wallet\` - View your wallet balance & interactive menu\n• \`/leaderboard\` - Check top 10 Paw Point holders\n\n💡 *Tip:* Chat naturally and look out for secret triggers in the community\!`;
-  return ctx.replyWithMarkdownV2(welcomeText);
+  const message = ctx.message as any;
+  const args = message?.text?.split(/\s+/)[1];
+
+  if (args === 'wallet' && ctx.chat.type === 'private') {
+    try {
+      const wallet = await getOrCreateWallet(ctx.from.id);
+      return ctx.reply(
+        `🐾 *Your WifhPaws Wallet is Ready!*\n\n` +
+        `📍 *Address:*\n\`${wallet.public_address}\`\n\n` +
+        `Type \`/wallet\` to open your interactive dashboard!`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (e: any) {
+      return ctx.reply(`❌ Error: ${e.message}`);
+    }
+  }
+
+  const welcomeText = 
+    `🐾 *Welcome to WifhPaws Bot!*\n\n` +
+    `Engage in community chats to earn hidden Paw Points and manage your Robinhood Chain EVM wallet.\n\n` +
+    `📌 *Available Commands:*\n` +
+    `• \`/wallet\` - View your wallet balance & interactive menu\n` +
+    `• \`/leaderboard\` - Check top 10 Paw Point holders\n\n` +
+    `💡 *Tip:* Chat naturally and look out for secret triggers in the community!`;
+
+  return ctx.reply(welcomeText, { parse_mode: 'Markdown' });
 });
 
 bot.command('wallet', async (ctx) => {
