@@ -471,6 +471,32 @@ bot.command('airdrop', async (ctx) => {
 });
 
 // ==========================================
+// ADMIN HELP / BREAKDOWN COMMAND
+// ==========================================
+bot.command('admin', async (ctx) => {
+  const senderId = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) {
+    return ctx.reply('⛔ Unauthorized. This command is restricted to project administrators.');
+  }
+
+  const adminHelpText =
+    `🛡️ *WifhPaws Admin Control Center*\n\n` +
+    `You are authenticated as an official project administrator. Here are the tools available to you:\n\n` +
+    `🎁 *Treasury Airdrop*\n` +
+    `• \`/airdrop [@username or 0xAddress] [amount]\`\n` +
+    `  _Sends real WIFH tokens from the central treasury on Robinhood Chain._\n\n` +
+    `⭐ *Point Management*\n` +
+    `• \`/addpoints [@username] [amount]\` — _Reward specific users._\n` +
+    `• \`/resetpoints [@username]\` — _Clear a user's point balance._\n\n` +
+    `🔑 *Keyword Rewards*\n` +
+    `• \`/addkeyword [word] [points]\` — _Set up new chat triggers._\n` +
+    `• \`/removekeyword [word]\` — _Delete an existing keyword._\n` +
+    `• \`/keywords\` — _View all active reward triggers._`;
+
+  return ctx.reply(adminHelpText, { parse_mode: 'Markdown' });
+});
+
+// ==========================================
 // PUBLIC & ADMIN CONTROL COMMANDS
 // ==========================================
 
