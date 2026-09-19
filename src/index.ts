@@ -497,6 +497,53 @@ bot.command('admin', async (ctx) => {
 });
 
 // ==========================================
+// ADMIN TREASURY DASHBOARD COMMAND
+// ==========================================
+bot.command('treasury', async (ctx) => {
+  const senderId = ctx.from.id;
+  if (!isAdmin(senderId)) {
+    return ctx.reply('⛔ Unauthorized. Project treasury details are restricted to admins.');
+  }
+
+  if (!treasurySigner) {
+    return ctx.reply('❌ Project Treasury wallet is not configured. Check your `TREASURY_PRIVATE_KEY` environment variable.');
+  }
+
+  try {
+    const treasuryAddress = treasurySigner.address;
+    const ethBalanceWei = await provider.getBalance(treasuryAddress);
+    const ethBalance = ethers.formatEther(ethBalanceWei);
+
+    let wifhBalance = '0.0';
+    if (WIFH_CONTRACT_ADDRESS) {
+      try {
+        const tokenContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, provider);
+        const rawBalance = await tokenContract.balanceOf(treasuryAddress);
+        const decimals = await tokenContract.decimals();
+        wifhBalance = ethers.formatUnits(rawBalance, decimals);
+      } catch (e) {
+        wifhBalance = '0.0';
+      }
+    }
+
+    const treasuryText =
+      `🏦 *Project Treasury Dashboard*\n\n` +
+      `📍 *Treasury Address:*\n\`${treasuryAddress}\`\n\n` +
+      `💰 *Central Reserves (Robinhood Chain):*\n` +
+      `• *ETH (Gas):* \`${parseFloat(ethBalance).toFixed(4)} ETH\`\n` +
+      `• *WIFH Pool:* \`${wifhBalance}\` WIFH\n\n` +
+      `🎁 *Quick Airdrop Syntax:*\n` +
+      `\`/airdrop [@username or 0xAddress] [amount]\``;
+
+    return ctx.replyWithMarkdownV2(
+      treasuryText.replace(/([-_ *\[\]().~`>#+=|{}.!])/g, '\\$1')
+    );
+  } catch (err: any) {
+    return ctx.reply(`❌ Error loading treasury details: ${err.message}`);
+  }
+});
+
+// ==========================================
 // PUBLIC & ADMIN CONTROL COMMANDS
 // ==========================================
 
