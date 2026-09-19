@@ -21,7 +21,7 @@ export const TRIGGER_KEYWORDS: string[] = [
 export const POINTS_PER_TRIGGER: number = 10;
 
 /** Cooldown period in minutes per user to prevent spam */
-export const COOLDOWN_MINUTES: number = 60;
+export const COOLDOWN_MINUTES: number = 15;
 
 /**
  * Message template sent when points are awarded.
