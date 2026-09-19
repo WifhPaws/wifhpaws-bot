@@ -18,7 +18,7 @@ still-trader/
 wallet-watcher/
 crawler.js
 jobs.json
-index.html
+# index.html (Telegram WebApp Dashboard)
 script.js
 style.css
 test_access.txt

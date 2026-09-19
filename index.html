@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WifhPaws Dashboard</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Telegram Web App SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            background-color: #0b2317;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        .glass-card {
+            background: rgba(18, 48, 31, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(74, 222, 128, 0.15);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4 selection:bg-emerald-500 selection:text-white">
+
+    <!-- App Container -->
+    <div class="w-full max-w-md mx-auto flex flex-col gap-4 pb-8">
+        
+        <!-- Header Profile Section -->
+        <div class="glass-card rounded-2xl p-4 flex items-center gap-4 shadow-lg">
+            <div class="relative">
+                <!-- Shiba Inu Mascot Avatar (Forest-green hoodie zipped high, mauve beanie peeking out) -->
+                <div class="w-16 h-16 rounded-2xl bg-emerald-900 border-2 border-emerald-500/40 flex items-center justify-center overflow-hidden shadow-inner">
+                    <img src="https://dogwifhood.org/assets/mascot.png" alt="WifhPaws Mascot" class="w-full h-full object-cover transform scale-110" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%234ade80\'><path d=\'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z\'/></svg>'">
+                </div>
+                <div class="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full border-2 border-[#0b2317] flex items-center justify-center text-[10px]">🐾</div>
+            </div>
+            <div>
+                <h1 id="user-name" class="font-bold text-lg tracking-wide text-emerald-100">WifhPaws HQ</h1>
+                <p id="user-handle" class="text-xs text-emerald-400 font-mono">@WifhPawsUser</p>
+            </div>
+        </div>
+
+        <!-- Treasured Assets Section -->
+        <div class="glass-card rounded-2xl p-5 shadow-xl flex flex-col gap-4">
+            <div class="flex justify-between items-center border-b border-emerald-900/50 pb-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">My Treasured Assets</span>
+                <span class="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-800/50">Robinhood Chain</span>
+            </div>
+
+            <!-- Asset Cards -->
+            <div class="flex flex-col gap-3">
+                <!-- WIFH Token Balance -->
+                <div class="bg-[#081a11] border border-emerald-900/60 rounded-xl p-3 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg bg-emerald-900/40 flex items-center justify-center text-xl">🐶</div>
+                        <div>
+                            <div class="text-sm font-bold text-emerald-100">WIFH Token</div>
+                            <div class="text-[11px] text-emerald-400/80">Fetched live from Robinhood Chain</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div id="wifh-balance" class="font-bold text-base text-emerald-200">1,500 WIFH</div>
+                    </div>
+                </div>
+
+                <!-- ETH Gas Balance -->
+                <div class="bg-[#081a11] border border-emerald-900/60 rounded-xl p-3 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg bg-emerald-900/40 flex items-center justify-center text-xl">⚡</div>
+                        <div>
+                            <div class="text-sm font-bold text-emerald-100">ETH (Gas)</div>
+                            <div class="text-[11px] text-emerald-400/80">Fetched live from Robinhood Chain</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div id="eth-balance" class="font-bold text-base text-emerald-200">0.045 ETH</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="grid grid-cols-2 gap-3 pt-1">
+                <button onclick="openDepositModal()" class="w-full py-3 px-4 bg-gradient-to-r from-purple-700 to-purple-600 hover:from-purple-600 hover:to-purple-500 text-white font-semibold rounded-xl shadow-lg transition-all transform active:scale-95 text-sm flex items-center justify-center gap-2">
+                    <span>📥</span> Deposit
+                </button>
+                <button onclick="openSendModal()" class="w-full py-3 px-4 bg-gradient-to-r from-emerald-700 to-emerald-600 hover:from-emerald-600 hover:to-emerald-500 text-white font-semibold rounded-xl shadow-lg transition-all transform active:scale-95 text-sm flex items-center justify-center gap-2">
+                    <span>🎁</span> Send Gift
+                </button>
+            </div>
+        </div>
+
+        <!-- Community Leaderboard (Top Pack) -->
+        <div class="glass-card rounded-2xl p-5 shadow-xl flex flex-col gap-3">
+            <div class="flex justify-between items-center border-b border-emerald-900/50 pb-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">Community Leaderboard (Top Pack)</span>
+                <span class="text-[10px] text-emerald-500 animate-pulse">● LIVE</span>
+            </div>
+
+            <!-- Leaderboard List -->
+            <div id="leaderboard-list" class="flex flex-col gap-2">
+                <!-- Rank 1 -->
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-[#081a11] border border-emerald-900/40">
+                    <div class="flex items-center gap-3">
+                        <span class="w-6 text-center font-bold text-amber-400">1</span>
+                        <div class="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-xs">🥇</div>
+                        <span class="text-sm font-medium text-emerald-100">@CryptoPup</span>
+                    </div>
+                    <span class="text-sm font-bold text-emerald-300">5,200 pts</span>
+                </div>
+
+                <!-- Rank 2 -->
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-[#081a11] border border-emerald-900/40">
+                    <div class="flex items-center gap-3">
+                        <span class="w-6 text-center font-bold text-slate-300">2</span>
+                        <div class="w-8 h-8 rounded-full bg-slate-400/20 flex items-center justify-center text-xs">🥈</div>
+                        <span class="text-sm font-medium text-emerald-100">AlphaDog</span>
+                    </div>
+                    <span class="text-sm font-bold text-emerald-300">4,950 pts</span>
+                </div>
+
+                <!-- Rank 3 -->
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-[#081a11] border border-emerald-900/40">
+                    <div class="flex items-center gap-3">
+                        <span class="w-6 text-center font-bold text-amber-600">3</span>
+                        <div class="w-8 h-8 rounded-full bg-amber-700/20 flex items-center justify-center text-xs">🥉</div>
+                        <span class="text-sm font-medium text-emerald-100">WifhWhale</span>
+                    </div>
+                    <span class="text-sm font-bold text-emerald-300">4,780 pts</span>
+                </div>
+            </div>
+
+            <!-- Footer Meta -->
+            <div class="pt-2 flex justify-between items-center text-[11px] text-emerald-400/70 border-t border-emerald-900/30">
+                <span>View Full Pack</span>
+                <span id="reset-timer">Next Reset: 2 days</span>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+            const user = tg.initDataUnsafe.user;
+            document.getElementById('user-name').innerText = user.first_name + (user.last_name ? ' ' + user.last_name : '');
+            document.getElementById('user-handle').innerText = user.username ? '@' + user.username : 'ID: ' + user.id;
+        }
+
+        function openDepositModal() {
+            tg.showPopup({
+                title: 'Deposit Assets',
+                message: 'Send $WIFH or ETH on Robinhood Chain to your personal linked vault address.',
+                buttons: [{type: 'ok', text: 'Got it'}]
+            });
+        }
+
+        function openSendModal() {
+            tg.showPopup({
+                title: 'Send Gift',
+                message: 'Gift token routing via WifhPaws bot chat commands is currently active!',
+                buttons: [{type: 'close', text: 'Close'}]
+            });
+        }
+    </script>
+</body>
+</html>

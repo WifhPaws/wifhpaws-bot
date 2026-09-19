@@ -1,3 +1,6 @@
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
 import { Telegraf, Context, Markup } from 'telegraf';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
@@ -232,7 +235,7 @@ bot.command('send', async (ctx) => {
 
   const amountStr = args[1];
   const tokenType = args[2].toLowerCase();
-  const recipientInput = args[3];
+  const recipientInput: string = String(args[3] || '');
   if (isNaN(Number(amountStr)) || Number(amountStr) <= 0) return ctx.reply('❌ Please enter a valid positive amount.');
 
   try {
@@ -241,7 +244,7 @@ bot.command('send', async (ctx) => {
     const signer = new ethers.Wallet(privateKey, provider);
 
     let destinationAddress = '';
-    if (ethers.isAddress(recipientInput)) {
+    if ((ethers.isAddress as any)(recipientInput)) {
       destinationAddress = recipientInput;
     } else {
       const cleanUsername = recipientInput.replace('@', '');
@@ -334,12 +337,12 @@ bot.command('airdrop', async (ctx) => {
   if (args.length < 3) {
     return ctx.reply('⚠️ *Admin Airdrop Usage:* `/airdrop [@username or 0xAddress] [amount]`\n\n*Example:*\n`/airdrop @username 500`', { parse_mode: 'Markdown' });
   }
-  const targetInput = args[1];
+  const targetInput: string = String(args[1] || '');
   const amountStr = args[2];
   if (isNaN(Number(amountStr)) || Number(amountStr) <= 0) return ctx.reply('❌ Invalid airdrop amount.');
   try {
     let destinationAddress = '';
-    if (ethers.isAddress(targetInput)) {
+    if ((ethers.isAddress as any)(targetInput)) {
       destinationAddress = targetInput;
     } else {
       const targetUser = await getTargetUser(ctx);
@@ -471,8 +474,48 @@ bot.on('message', async (ctx, next) => {
   return next();
 });
 
-// Launch Bot
-bot.launch().then(() => console.log('WifhPaws Bot running with secret keywords and reset controls!'));
+// ==========================================
+// LIGHTWEIGHT HTTP SERVER FOR RENDER / 24/7 & WEBAPP
+// ==========================================
+const port = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  if (req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        status: 'healthy',
+        bot: 'WifhPaws',
+        timestamp: new Date().toISOString(),
+      })
+    );
+  } else if (req.url === '/' || req.url === '/index.html') {
+    const indexPath = path.join(process.cwd(), 'index.html');
+    if (fs.existsSync(indexPath)) {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(fs.readFileSync(indexPath));
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'healthy', bot: 'WifhPaws' }));
+    }
+  } else {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
+  }
+});
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+server.listen(port, () => {
+  console.log(`🌐 Server listening on port ${port} (Serving Dashboard & /health)`);
+});
+
+// Launch Bot
+bot.launch().then(() => console.log('🐾 WifhPaws Bot running with secret keywords, treasury dashboard, and WebApp!'));
+
+const stopBot = (signal: string) => {
+  console.log(`\n🛑 Received ${signal}. Stopping bot...`);
+  server.close();
+  bot.stop(signal);
+  process.exit(0);
+};
+
+process.once('SIGINT', () => stopBot('SIGINT'));
+process.once('SIGTERM', () => stopBot('SIGTERM'));
