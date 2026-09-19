@@ -197,14 +197,24 @@ bot.command('start', async (ctx) => {
       }
     });
   } else {
-    // Standard user view with just the Mini App button
-    await ctx.reply("Welcome to WifhPaws! Tap below to open your wallet dashboard:", {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "💎 Open Wallet Dashboard", web_app: { url: WEBAPP_URL } }]
-        ]
+    // Standard user view — Mini App button + full chat command list
+    await ctx.reply(
+      `🐾 *Welcome to WifhPaws Bot!*\n\n` +
+      `Engage in group chats to earn hidden Paw Points and manage your Robinhood Chain EVM wallet.\n\n` +
+      `📌 *Chat Commands:*\n` +
+      `• \`/wallet\` — View wallet balance & manage funds\n` +
+      `• \`/send [amount] [eth/wifh] [@user or 0x...]\` — Transfer tokens\n` +
+      `• \`/leaderboard\` — Top 10 Paw Point holders\n\n` +
+      `💡 *Tip:* Chat naturally in groups — secret keywords earn you Paw Points!`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '💎 Open Wallet Dashboard', web_app: { url: WEBAPP_URL } }]
+          ]
+        }
       }
-    });
+    );
   }
 });
 
