@@ -22,7 +22,7 @@ const WALLET_ENCRYPTION_KEY = process.env.WALLET_ENCRYPTION_KEY;
 const TREASURY_PRIVATE_KEY = process.env.TREASURY_PRIVATE_KEY || '';
 const WIFH_CONTRACT_ADDRESS = process.env.WIFH_CONTRACT_ADDRESS || '';
 const ROBINHOOD_RPC_URL = process.env.ROBINHOOD_RPC_URL || 'https://rpc.mainnet.chain.robinhood.com';
-const WEBAPP_URL = process.env.WEBAPP_URL?.trim() || 'https://wifhpaws-bot.onrender.com/';
+const WEBAPP_URL = process.env.WEBAPP_URL?.trim() || 'https://wifhpaws.github.io/wifhpaws-bot/';
 
 if (!BOT_TOKEN || !SUPABASE_URL || !SUPABASE_ANON_KEY || !WALLET_ENCRYPTION_KEY) {
   throw new Error('Missing required environment variables in .env file.');
@@ -118,7 +118,8 @@ async function getOrCreateWallet(telegramId: number): Promise<{ public_address: 
 }
 
 function isAdmin(userId: number): boolean {
-  return ADMIN_USER_IDS.includes(userId.toString());
+  const adminSingle = process.env.ADMIN_TELEGRAM_ID?.trim();
+  return ADMIN_USER_IDS.includes(userId.toString()) || (adminSingle ? userId.toString() === adminSingle : false);
 }
 
 async function getTargetUser(ctx: Context): Promise<{ id: number; username?: string } | null> {
@@ -153,6 +154,7 @@ async function getTargetUser(ctx: Context): Promise<{ id: number; username?: str
 // ==========================================
 
 bot.command('start', async (ctx) => {
+  const userId = ctx.from?.id;
   const message = ctx.message as any;
   const args = message?.text?.split(/\s+/)[1];
 
@@ -162,12 +164,14 @@ bot.command('start', async (ctx) => {
       return ctx.reply(
         `🐾 *Your WifhPaws Wallet is Ready!*\n\n` +
         `📍 *Address:*\n\`${wallet.public_address}\`\n\n` +
-        `Tap below to open your interactive Mini App dashboard!`,
+        `Tap below to open your wallet dashboard:`,
         {
           parse_mode: 'Markdown',
-          ...Markup.inlineKeyboard([
-            [Markup.button.webApp('🚀 Open Mini App Dashboard', WEBAPP_URL)],
-          ]),
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "💎 Open Wallet Dashboard", web_app: { url: WEBAPP_URL } }]
+            ]
+          }
         }
       );
     } catch (e: any) {
@@ -175,20 +179,33 @@ bot.command('start', async (ctx) => {
     }
   }
 
-  const welcomeText = 
-    `🐾 *Welcome to WifhPaws Bot!*\n\n` +
-    `Engage in community chats to earn hidden Paw Points and manage your Robinhood Chain EVM wallet.\n\n` +
-    `📌 *Available Commands:*\n` +
-    `• \`/wallet\` - View your wallet balance & interactive menu\n` +
-    `• \`/leaderboard\` - Check top 10 Paw Point holders\n\n` +
-    `💡 *Tip:* Chat naturally and look out for secret triggers in the community!`;
-
-  return ctx.reply(welcomeText, {
-    parse_mode: 'Markdown',
-    ...Markup.inlineKeyboard([
-      [Markup.button.webApp('🚀 Launch WifhPaws Mini App', WEBAPP_URL)],
-    ]),
-  });
+  if (userId && isAdmin(userId)) {
+    // Send chat message with Admin & Treasury inline buttons
+    await ctx.reply("🐾 *WifhPaws Admin & Treasury Control*", {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🏦 View Treasury", callback_data: "admin_treasury" },
+            { text: "🪂 Airdrop Token", callback_data: "admin_airdrop" }
+          ],
+          [
+            { text: "⚙️ Reset Points", callback_data: "admin_reset" },
+            { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
+          ]
+        ]
+      }
+    });
+  } else {
+    // Standard user view with just the Mini App button
+    await ctx.reply("Welcome to WifhPaws! Tap below to open your wallet dashboard:", {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "💎 Open Wallet Dashboard", web_app: { url: WEBAPP_URL } }]
+        ]
+      }
+    });
+  }
 });
 
 bot.command('wallet', async (ctx) => {
@@ -262,6 +279,67 @@ bot.action('action_export_key', async (ctx) => {
   } catch (err: any) {
     return ctx.reply(`❌ Error decrypting key: ${err.message}`);
   }
+});
+
+bot.action('admin_treasury', async (ctx) => {
+  await ctx.answerCbQuery();
+  const senderId = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
+  if (!treasurySigner) return ctx.reply('❌ Treasury wallet is not configured. Check TREASURY_PRIVATE_KEY.');
+
+  try {
+    const treasuryAddress = treasurySigner.address;
+    const ethBalanceWei = await provider.getBalance(treasuryAddress);
+    const ethBalance = ethers.formatEther(ethBalanceWei);
+
+    let wifhBalance = '0.0';
+    if (WIFH_CONTRACT_ADDRESS) {
+      try {
+        const tokenContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, provider);
+        const rawBalance = await tokenContract.balanceOf(treasuryAddress);
+        const decimals = await tokenContract.decimals();
+        wifhBalance = ethers.formatUnits(rawBalance, decimals);
+      } catch (e) {
+        wifhBalance = '0.0';
+      }
+    }
+
+    return ctx.reply(
+      `🏦 *Project Treasury Status*\n\n` +
+      `📍 *Address:*\n\`${treasuryAddress}\`\n\n` +
+      `💰 *Central Reserves (Robinhood Chain):*\n` +
+      `• *ETH (Gas):* \`${parseFloat(ethBalance).toFixed(4)} ETH\`\n` +
+      `• *WIFH Pool:* \`${wifhBalance}\` WIFH\n\n` +
+      `🎁 Quick airdrop: \`/airdrop [@username or 0xAddress] [amount]\``,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    return ctx.reply(`❌ Error: ${err.message}`);
+  }
+});
+
+bot.action('admin_airdrop', async (ctx) => {
+  await ctx.answerCbQuery();
+  const senderId = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
+  return ctx.reply(
+    `🪂 *Token Airdrop Command:*\n\n` +
+    `\`/airdrop [@username or 0xAddress] [amount]\`\n\n` +
+    `_Example:_ \`/airdrop @username 500\``,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+bot.action('admin_reset', async (ctx) => {
+  await ctx.answerCbQuery();
+  const senderId = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
+  return ctx.reply(
+    `⚙️ *Points Reset Options:*\n\n` +
+    `• \`/resetpoints @username\` — Reset single user points\n` +
+    `• \`/resetallpoints\` — Reset all points on leaderboard`,
+    { parse_mode: 'Markdown' }
+  );
 });
 
 // Transfer Command (/send)
