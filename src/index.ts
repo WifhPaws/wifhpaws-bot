@@ -22,6 +22,7 @@ const WALLET_ENCRYPTION_KEY = process.env.WALLET_ENCRYPTION_KEY;
 const TREASURY_PRIVATE_KEY = process.env.TREASURY_PRIVATE_KEY || '';
 const WIFH_CONTRACT_ADDRESS = process.env.WIFH_CONTRACT_ADDRESS || '';
 const ROBINHOOD_RPC_URL = process.env.ROBINHOOD_RPC_URL || 'https://rpc.mainnet.chain.robinhood.com';
+const WEBAPP_URL = process.env.WEBAPP_URL?.trim() || 'https://wifhpaws-bot.onrender.com/';
 
 if (!BOT_TOKEN || !SUPABASE_URL || !SUPABASE_ANON_KEY || !WALLET_ENCRYPTION_KEY) {
   throw new Error('Missing required environment variables in .env file.');
@@ -161,8 +162,13 @@ bot.command('start', async (ctx) => {
       return ctx.reply(
         `🐾 *Your WifhPaws Wallet is Ready!*\n\n` +
         `📍 *Address:*\n\`${wallet.public_address}\`\n\n` +
-        `Type \`/wallet\` to open your interactive dashboard!`,
-        { parse_mode: 'Markdown' }
+        `Tap below to open your interactive Mini App dashboard!`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.webApp('🚀 Open Mini App Dashboard', WEBAPP_URL)],
+          ]),
+        }
       );
     } catch (e: any) {
       return ctx.reply(`❌ Error: ${e.message}`);
@@ -177,7 +183,12 @@ bot.command('start', async (ctx) => {
     `• \`/leaderboard\` - Check top 10 Paw Point holders\n\n` +
     `💡 *Tip:* Chat naturally and look out for secret triggers in the community!`;
 
-  return ctx.reply(welcomeText, { parse_mode: 'Markdown' });
+  return ctx.reply(welcomeText, {
+    parse_mode: 'Markdown',
+    ...Markup.inlineKeyboard([
+      [Markup.button.webApp('🚀 Launch WifhPaws Mini App', WEBAPP_URL)],
+    ]),
+  });
 });
 
 bot.command('wallet', async (ctx) => {
@@ -186,7 +197,8 @@ bot.command('wallet', async (ctx) => {
     return ctx.reply(
       '🔒 For your privacy and security, wallet details are managed in private messages.',
       Markup.inlineKeyboard([
-        Markup.button.url('📩 Open Private Wallet', `https://t.me/${botInfo.username}?start=wallet`),
+        [Markup.button.url('📩 Open Private Wallet', `https://t.me/${botInfo.username}?start=wallet`)],
+        [Markup.button.webApp('🚀 Open Mini App', WEBAPP_URL)],
       ])
     );
   }
@@ -214,6 +226,7 @@ bot.command('wallet', async (ctx) => {
     return ctx.replyWithMarkdownV2(
       messageText.replace(/([-_ *\[\]().~`>#+=|{}.!])/g, '\\$1'),
       Markup.inlineKeyboard([
+        [Markup.button.webApp('🚀 Launch Mini App Dashboard', WEBAPP_URL)],
         [Markup.button.callback('📥 Receive', 'action_receive'), Markup.button.callback('💸 Send', 'action_send_guide')],
         [Markup.button.callback('🔑 Export Private Key', 'action_export_key')],
       ])
