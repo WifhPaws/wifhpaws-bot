@@ -31,7 +31,6 @@ const bot = new Telegraf(BOT_TOKEN);
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const provider = new ethers.JsonRpcProvider(ROBINHOOD_RPC_URL);
 
-// ERC-20 Minimal ABI for balance checking & transfers
 const ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
   'function decimals() view returns (uint8)',
@@ -39,7 +38,7 @@ const ERC20_ABI = [
   'function transfer(address to, uint256 amount) returns (boolean)',
 ];
 
-const COOLDOWN_SECONDS = 60; // 60 seconds
+const COOLDOWN_SECONDS = 60;
 
 // ==========================================
 // CRYPTO ENCRYPTION HELPERS (AES-256-GCM)
@@ -77,18 +76,14 @@ function decryptPrivateKey(encryptedData: string): string {
 // WALLET MANAGEMENT FUNCTIONS
 // ==========================================
 async function getOrCreateWallet(telegramId: number): Promise<{ public_address: string; encrypted_private_key: string }> {
-  // 1. Check if wallet exists
-  const { data: existingWallet, error: fetchError } = await supabase
+  const { data: existingWallet } = await supabase
     .from('user_wallets')
     .select('public_address, encrypted_private_key')
     .eq('telegram_id', telegramId)
     .single();
 
-  if (existingWallet && !fetchError) {
-    return existingWallet;
-  }
+  if (existingWallet) return existingWallet;
 
-  // 2. Generate new EVM Wallet
   const newWallet = ethers.Wallet.createRandom();
   const encryptedKey = encryptPrivateKey(newWallet.privateKey);
 
@@ -106,7 +101,7 @@ async function getOrCreateWallet(telegramId: number): Promise<{ public_address: 
     throw new Error(`Failed to create wallet: ${error?.message}`);
   }
 
-  // Also update wallet_address in users table for easy lookup
+  // Update wallet_address in users table
   await supabase
     .from('users')
     .update({ wallet_address: newWallet.address })
@@ -120,17 +115,17 @@ function isAdmin(userId: number): boolean {
 }
 
 async function getTargetUser(ctx: Context): Promise<{ id: number; username?: string } | null> {
-  const msg = ctx.message as any;
-  if (!msg || !msg.text) return null;
+  const message = ctx.message as any;
+  if (!message || !message.text) return null;
 
-  if (msg.reply_to_message?.from) {
+  if (message.reply_to_message?.from) {
     return {
-      id: msg.reply_to_message.from.id,
-      username: msg.reply_to_message.from.username,
+      id: message.reply_to_message.from.id,
+      username: message.reply_to_message.from.username,
     };
   }
 
-  const args = msg.text.split(' ').slice(1);
+  const args = message.text.split(/\s+/).slice(1);
   if (args.length > 0) {
     const target = args[0].replace('@', '');
     if (!isNaN(Number(target))) return { id: Number(target) };
@@ -147,7 +142,6 @@ async function getTargetUser(ctx: Context): Promise<{ id: number; username?: str
   return null;
 }
 
-/** Keyword matching with word boundaries */
 function matchesKeyword(text: string, keyword: string): boolean {
   const escaped = keyword.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp(`(^|\\s|[.,!?;:()""''])${escaped}([.,!?;:()""'']|\\s|$)`, 'i');
@@ -155,7 +149,7 @@ function matchesKeyword(text: string, keyword: string): boolean {
 }
 
 // ==========================================
-// PRIVATE WALLET COMMANDS
+// INTERACTIVE WALLET DASHBOARD & COMMANDS
 // ==========================================
 
 bot.command('wallet', async (ctx) => {
@@ -194,41 +188,117 @@ bot.command('wallet', async (ctx) => {
     }
 
     const messageText =
-      `🐾 *Your WifhPaws Wallet*\n\n` +
-      `📍 *Address:* \`${wallet.public_address}\`\n\n` +
+      `🐾 *WifhPaws Wallet Dashboard*\n\n` +
+      `📍 *Address:*\n\`${wallet.public_address}\`\n\n` +
       `💰 *Balances (Robinhood Chain):*\n` +
       `• *ETH (Gas):* \`${ethBalance} ETH\`\n` +
       `• *WIFH Token:* \`${wifhBalance}\`\n\n` +
-      `💸 *Send Funds:* Type \`/send [amount] [eth/wifh] [address_or_@username]\`\n` +
-      `🔑 *Export Key:* Type \`/export\` to reveal your private key\n\n` +
-      `⚠️ _Never share your private key with anyone._`;
+      `Choose an option below:`;
 
-    return ctx.reply(messageText, { parse_mode: 'Markdown' });
+    return ctx.reply(
+      messageText,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback('📥 Receive', 'action_receive'),
+            Markup.button.callback('💸 Send', 'action_send_guide'),
+          ],
+          [
+            Markup.button.callback('🔑 Export Private Key', 'action_export_key'),
+          ],
+        ]),
+      }
+    );
   } catch (err: any) {
     return ctx.reply(`❌ Error accessing wallet: ${err.message}`);
   }
 });
 
-// Transfer Funds Command (/send [amount] [eth/wifh] [address_or_username])
+// Callback Buttons Listeners
+bot.action('action_receive', async (ctx) => {
+  await ctx.answerCbQuery();
+  const telegramId = ctx.from?.id;
+  if (!telegramId) return;
+
+  try {
+    const wallet = await getOrCreateWallet(telegramId);
+    return ctx.reply(
+      `📥 *Deposit Funds*\n\n` +
+      `Send ETH or WIFH on *Robinhood Chain* to your address below:\n\n` +
+      `\`${wallet.public_address}\``,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (e: any) {
+    return ctx.reply(`❌ Error: ${e.message}`);
+  }
+});
+
+bot.action('action_send_guide', async (ctx) => {
+  await ctx.answerCbQuery();
+  return ctx.reply(
+    `💸 *How to Send Funds*\n\n` +
+    `Use the \`/send\` command in this private chat:\n\n` +
+    `• *To External Wallet:*\n` +
+    `\`/send [amount] [eth/wifh] [0xAddress]\`\n\n` +
+    `• *To Telegram User:*\n` +
+    `\`/send [amount] [eth/wifh] [@username]\`\n\n` +
+    `*Examples:*\n` +
+    `\`/send 0.001 eth 0x1234567890abcdef1234567890abcdef12345678\`\n` +
+    `\`/send 50 wifh @john\``,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+bot.action('action_export_key', async (ctx) => {
+  await ctx.answerCbQuery();
+  const telegramId = ctx.from?.id;
+  if (!telegramId) return;
+
+  try {
+    const { data: wallet } = await supabase
+      .from('user_wallets')
+      .select('encrypted_private_key')
+      .eq('telegram_id', telegramId)
+      .single();
+
+    if (!wallet) return ctx.reply('❌ No wallet found.');
+
+    const privateKey = decryptPrivateKey(wallet.encrypted_private_key);
+
+    return ctx.reply(
+      `⚠️ *CONFIDENTIAL PRIVATE KEY*\n\n` +
+      `Do not share this key with anyone! Anyone with this key has full control of your funds.\n\n` +
+      `🔑 \`${privateKey}\``,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    return ctx.reply(`❌ Error decrypting key: ${err.message}`);
+  }
+});
+
+// Transfer Command
 bot.command('send', async (ctx) => {
   if (ctx.chat.type !== 'private') {
     return ctx.reply('🔒 Transfers can only be initiated in private messages for security.');
   }
 
-  const msgText = (ctx.message as any)?.text || '';
-  const args = msgText.trim().split(/\s+/).filter(Boolean);
+  const messageText = (ctx.message as any)?.text || '';
+  const args = messageText.trim().split(/\s+/).filter(Boolean);
 
   if (args.length < 4) {
     return ctx.reply(
       '⚠️ *Usage:* `/send [amount] [eth/wifh] [0xAddress or @username]`\n\n' +
-      'Example: `/send 10 wifh @john` or `/send 0.001 eth 0x123...`',
+      '*Examples:*\n' +
+      '• `/send 10 wifh @username`\n' +
+      '• `/send 0.001 eth 0x123...`',
       { parse_mode: 'Markdown' }
     );
   }
 
   const amountStr = args[1];
   const tokenType = args[2].toLowerCase();
-  const recipientInput = args[3];
+  const recipientInput: string = String(args[3] || '');
 
   if (isNaN(Number(amountStr)) || Number(amountStr) <= 0) {
     return ctx.reply('❌ Please enter a valid positive amount.');
@@ -243,11 +313,11 @@ bot.command('send', async (ctx) => {
 
     let destinationAddress = '';
 
-    // Determine target recipient (0x Address vs Telegram Username)
-    if (ethers.isAddress(recipientInput)) {
+    const isEthAddress: boolean = (ethers.isAddress as any)(recipientInput);
+    if (isEthAddress) {
       destinationAddress = recipientInput;
     } else {
-      const cleanUsername = recipientInput.replace(/^@/, '');
+      const cleanUsername = String(recipientInput).replace(/^@/, '');
       const { data: recipientUser } = await supabase
         .from('users')
         .select('telegram_id')
@@ -280,7 +350,7 @@ bot.command('send', async (ctx) => {
       await tx.wait();
     } else if (tokenType === 'wifh') {
       if (!WIFH_CONTRACT_ADDRESS) {
-        return ctx.reply('❌ WIFH token contract address is not configured yet in environment.');
+        return ctx.reply('❌ WIFH token contract address is not configured in Render environment variables yet.');
       }
       const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
       const decimals = await contract.decimals();
@@ -340,27 +410,25 @@ bot.command('export', async (ctx) => {
 // ==========================================
 
 bot.command('start', async (ctx) => {
-  const text = (ctx.message as any)?.text || '';
-  const args = text.split(/\s+/)[1];
-
+  const args = (ctx.message as any)?.text?.split(' ')[1];
   if (args === 'wallet' && ctx.chat.type === 'private') {
     try {
       const wallet = await getOrCreateWallet(ctx.from.id);
       return ctx.reply(
         `🐾 *Your WifhPaws Wallet is Ready!*\n\n` +
         `📍 *Address:* \`${wallet.public_address}\`\n\n` +
-        `Type \`/wallet\` to check balances, or \`/export\` to view your private key.`,
+        `Type \`/wallet\` to open your interactive dashboard!`,
         { parse_mode: 'Markdown' }
       );
     } catch (e: any) {
-      return ctx.reply(`❌ Error setting up wallet: ${e.message}`);
+      return ctx.reply(`❌ Error: ${e.message}`);
     }
   }
 
   return ctx.reply(
     '🐾 *Welcome to WifhPaws Bot!*\n\n' +
     '• Chat in groups to earn *Paw Points* (e.g. "gm", "thanks", "lfg")!\n' +
-    '• /wallet - View your anonymous crypto wallet & address\n' +
+    '• /wallet - Open your interactive crypto wallet dashboard\n' +
     '• /send - Transfer ETH or WIFH to any address or @username\n' +
     '• /leaderboard - View top 10 point holders\n' +
     '• /keywords - View active rewarded words',
@@ -381,10 +449,9 @@ bot.command('leaderboard', async (ctx) => {
 
   const medals = ['🥇', '🥈', '🥉'];
   let text = '🏆 *WifhPaws Top 10 Leaderboard*\n\n';
-
   users.forEach((user, index) => {
     const badge = medals[index] || `${index + 1}.`;
-    const name = user.username ? `@${user.username}` : `User #${user.telegram_id}`;
+    const name = user.username ? `@${user.username}` : `User ${user.telegram_id}`;
     const pts = user.paw_points ?? user.points ?? 0;
     text += `${badge} ${name} — *${pts}* pts\n`;
   });
@@ -393,11 +460,10 @@ bot.command('leaderboard', async (ctx) => {
 });
 
 bot.command('addpoints', async (ctx) => {
-  const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
+  const senderId = ctx.from.id;
+  if (!isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
 
-  const text = (ctx.message as any)?.text || '';
-  const args = text.trim().split(/\s+/).filter(Boolean);
+  const args = (ctx.message as any)?.text?.split(' ').filter(Boolean) || [];
   const amount = parseInt(args[args.length - 1], 10);
 
   if (isNaN(amount)) return ctx.reply('⚠️ Usage: `/addpoints [amount]` or `/addpoints @username [amount]`');
@@ -407,60 +473,38 @@ bot.command('addpoints', async (ctx) => {
 
   const { data: user } = await supabase
     .from('users')
-    .select('paw_points, points')
+    .select('paw_points')
     .eq('telegram_id', targetUser.id)
     .single();
 
-  const currentPoints = user?.paw_points ?? user?.points ?? 0;
-  const newBalance = currentPoints + amount;
+  const newBalance = (user?.paw_points || 0) + amount;
 
   await supabase
     .from('users')
-    .upsert(
-      {
-        telegram_id: targetUser.id,
-        username: targetUser.username || null,
-        paw_points: newBalance,
-        points: newBalance,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'telegram_id' }
-    );
+    .upsert({ telegram_id: targetUser.id, paw_points: newBalance, points: newBalance }, { onConflict: 'telegram_id' });
 
-  const display = targetUser.username ? `@${targetUser.username}` : `User #${targetUser.id}`;
-  return ctx.reply(`🎉 Added ${amount} Paw Points to ${display}. New Balance: ${newBalance}`);
+  return ctx.reply(`🎉 Added ${amount} Paw Points to ${targetUser.username ? '@' + targetUser.username : targetUser.id}. New Balance: ${newBalance}`);
 });
 
 bot.command('resetpoints', async (ctx) => {
-  const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
+  const senderId = ctx.from.id;
+  if (!isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
 
   const targetUser = await getTargetUser(ctx);
   if (!targetUser) return ctx.reply('⚠️ Usage: `/resetpoints @username`');
 
   await supabase
     .from('users')
-    .upsert(
-      {
-        telegram_id: targetUser.id,
-        username: targetUser.username || null,
-        paw_points: 0,
-        points: 0,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'telegram_id' }
-    );
+    .upsert({ telegram_id: targetUser.id, paw_points: 0, points: 0 }, { onConflict: 'telegram_id' });
 
-  const display = targetUser.username ? `@${targetUser.username}` : `User #${targetUser.id}`;
-  return ctx.reply(`🔄 Reset Paw Points to 0 for ${display}.`);
+  return ctx.reply(`🔄 Reset Paw Points to 0 for ${targetUser.username ? '@' + targetUser.username : targetUser.id}.`);
 });
 
 bot.command('addkeyword', async (ctx) => {
-  const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
+  const senderId = ctx.from.id;
+  if (!isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
 
-  const text = (ctx.message as any)?.text || '';
-  const args = text.trim().split(/\s+/).slice(1);
+  const args = (ctx.message as any)?.text?.split(' ').slice(1) || [];
   if (args.length < 2) return ctx.reply('⚠️ Usage: `/addkeyword [word] [points]`');
 
   const keyword = args[0].toLowerCase().trim();
@@ -478,11 +522,10 @@ bot.command('addkeyword', async (ctx) => {
 });
 
 bot.command('removekeyword', async (ctx) => {
-  const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
+  const senderId = ctx.from.id;
+  if (!isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
 
-  const text = (ctx.message as any)?.text || '';
-  const args = text.trim().split(/\s+/).slice(1);
+  const args = (ctx.message as any)?.text?.split(' ').slice(1) || [];
   if (args.length < 1) return ctx.reply('⚠️ Usage: `/removekeyword [word]`');
 
   const keyword = args[0].toLowerCase().trim();
@@ -510,12 +553,12 @@ bot.command('keywords', async (ctx) => {
 // CHAT LISTENER (COOLDOWN & POINT REWARDS)
 // ==========================================
 bot.on(message('text'), async (ctx, next) => {
-  const message = ctx.message as any;
-  if (!message || !message.text || message.text.startsWith('/')) return next();
+  const msg = ctx.message as any;
+  if (!msg || !msg.text || msg.text.startsWith('/') || ctx.from?.is_bot) return next();
 
   const userId = ctx.from.id;
   const username = ctx.from.username || null;
-  const text = message.text.toLowerCase();
+  const text = msg.text.toLowerCase();
 
   const { data: keywords } = await supabase.from('dynamic_keywords').select('*');
   if (!keywords || keywords.length === 0) return next();
@@ -525,7 +568,7 @@ bot.on(message('text'), async (ctx, next) => {
 
   const { data: user } = await supabase
     .from('users')
-    .select('paw_points, points, last_awarded_at')
+    .select('paw_points, last_awarded_at')
     .eq('telegram_id', userId)
     .single();
 
@@ -537,7 +580,7 @@ bot.on(message('text'), async (ctx, next) => {
     if (diffInSeconds < COOLDOWN_SECONDS) return next();
   }
 
-  const currentPoints = user?.paw_points ?? user?.points ?? 0;
+  const currentPoints = user?.paw_points || 0;
   const newBalance = currentPoints + matchedKeyword.points_reward;
 
   await supabase.from('users').upsert(
@@ -547,13 +590,13 @@ bot.on(message('text'), async (ctx, next) => {
       paw_points: newBalance,
       points: newBalance,
       last_awarded_at: now.toISOString(),
-      updated_at: now.toISOString(),
     },
     { onConflict: 'telegram_id' }
   );
 
   await ctx.reply(
-    `🐾 +${matchedKeyword.points_reward} Paw Points awarded to ${username ? '@' + username : 'you'} for "${matchedKeyword.keyword}"! Total: ${newBalance}`
+    `🐾 +${matchedKeyword.points_reward} Paw Points awarded to ${username ? '@' + username : 'you'} for "${matchedKeyword.keyword}"! Total: ${newBalance}`,
+    { reply_parameters: { message_id: ctx.message.message_id } }
   );
 
   return next();
@@ -584,7 +627,7 @@ server.listen(port, () => {
 });
 
 // Launch Bot
-bot.launch().then(() => console.log('🐾 WifhPaws Bot running with transaction support!'));
+bot.launch().then(() => console.log('🐾 WifhPaws Bot running with interactive wallet dashboard!'));
 
 const stopBot = (signal: string) => {
   console.log(`\n🛑 Received ${signal}. Stopping bot...`);
