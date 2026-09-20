@@ -181,7 +181,7 @@ bot.command('start', async (ctx) => {
 
   if (userId && isAdmin(userId)) {
     // Send chat message with Admin & Treasury inline buttons
-    const adminKeyboard = [
+    const adminKeyboard: any[] = [
       [
         { text: "🏦 View Treasury", callback_data: "admin_treasury" },
         { text: "🪂 Airdrop Token", callback_data: "admin_airdrop" }
@@ -490,7 +490,7 @@ bot.command('admin', async (ctx) => {
   const senderId = ctx.from.id;
   if (!isAdmin(senderId)) return ctx.reply('⛔ Unauthorized. This command is restricted to project administrators.');
 
-  const adminKeyboard = [
+  const adminKeyboard: any[] = [
     [
       { text: "🏦 View Treasury", callback_data: "admin_treasury" },
       { text: "🪂 Airdrop Token", callback_data: "admin_airdrop" }
