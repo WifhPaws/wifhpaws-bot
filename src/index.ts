@@ -224,13 +224,17 @@ bot.command('start', async (ctx) => {
 
 bot.command('wallet', async (ctx) => {
   if (ctx.chat.type !== 'private') {
-    const botInfo = await ctx.telegram.getMe();
+    const botUsername = ctx.botInfo?.username || 'WifhPawsBot';
     return ctx.reply(
       '🔒 For your privacy and security, wallet details are managed in private messages.',
-      Markup.inlineKeyboard([
-        [Markup.button.url('📩 Open Private Wallet', `https://t.me/${botInfo.username}?start=wallet`)],
-        [Markup.button.webApp('🚀 Open Mini App', WEBAPP_URL)],
-      ])
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '📩 Open Private Wallet', url: `https://t.me/${botUsername}?start=wallet` }],
+            [{ text: '🚀 Open Mini App', web_app: { url: WEBAPP_URL } }]
+          ]
+        }
+      }
     );
   }
 
@@ -372,13 +376,17 @@ bot.action('admin_keywords', async (ctx) => {
 bot.action('action_my_wallet', async (ctx) => {
   await ctx.answerCbQuery();
   if (ctx.chat?.type !== 'private') {
-    const botInfo = await ctx.telegram.getMe();
+    const botUsername = ctx.botInfo?.username || 'WifhPawsBot';
     return ctx.reply(
       '🔒 For your privacy and security, wallet details are managed in private messages.',
-      Markup.inlineKeyboard([
-        [Markup.button.url('📩 Open Private Wallet', `https://t.me/${botInfo.username}?start=wallet`)],
-        [Markup.button.webApp('🚀 Open Mini App', WEBAPP_URL)],
-      ])
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '📩 Open Private Wallet', url: `https://t.me/${botUsername}?start=wallet` }],
+            [{ text: '🚀 Open Mini App', web_app: { url: WEBAPP_URL } }]
+          ]
+        }
+      }
     );
   }
   
