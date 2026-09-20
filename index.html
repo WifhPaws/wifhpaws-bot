@@ -173,8 +173,8 @@
     <script>
         let currentUserId = null;
         let liveEthPrice = 2500;
-        let liveWifhPrice = 0.25;
-        const RATE_WIFH_PER_ETH = 10000;
+        let liveWifhPrice = 0.000000089;
+        let livePoolRate = 28000000; // WIFH per ETH from pool
 
         const API_BASE_URL = (window.location.hostname.includes('github.io') || window.location.protocol === 'file:')
             ? 'https://wifhpaws-bot.onrender.com'
@@ -206,12 +206,12 @@
             let receiveUsd = 0;
 
             if (fromToken === 'WIFH') {
-                receive = amount / RATE_WIFH_PER_ETH;
+                receive = amount / livePoolRate;
                 payUsd = amount * liveWifhPrice;
                 receiveUsd = receive * liveEthPrice;
                 document.getElementById('swap-receive').value = receive > 0 ? receive.toFixed(6) : '0.0';
             } else {
-                receive = amount * RATE_WIFH_PER_ETH;
+                receive = amount * livePoolRate;
                 payUsd = amount * liveEthPrice;
                 receiveUsd = receive * liveWifhPrice;
                 document.getElementById('swap-receive').value = receive > 0 ? Math.round(receive).toLocaleString() : '0.0';
@@ -254,7 +254,8 @@
 
                 const data = await response.json();
                 if (data.success) {
-                    alert(`✅ Swap Successful!\nSwapped ${amount} ${fromToken} for ${data.received} ${toToken}.`);
+                    const usdNote = data.received_usd ? ` (~$${data.received_usd} USD)` : '';
+                    alert(`✅ Swap Successful!\nSwapped ${amount} ${fromToken} for ${data.received} ${toToken}${usdNote}.`);
                     window.location.reload();
                 } else {
                     alert(`❌ Swap Failed: ${data.error || 'Transaction could not be completed.'}`);
@@ -310,8 +311,9 @@
                             document.getElementById('wifh-balance').innerText = `${data.wifh_balance} WIFH`;
                             document.getElementById('eth-balance').innerText = `${data.eth_balance} ETH`;
                             
-                            if (data.eth_price_usd) liveEthPrice = parseFloat(data.eth_price_usd);
+                        if (data.eth_price_usd) liveEthPrice = parseFloat(data.eth_price_usd);
                             if (data.wifh_price_usd) liveWifhPrice = parseFloat(data.wifh_price_usd);
+                            if (data.pool_rate) livePoolRate = parseFloat(data.pool_rate);
 
                             const ethUsd = (parseFloat(data.eth_balance) * liveEthPrice).toFixed(2);
                             const wifhUsd = (parseFloat(data.wifh_balance) * liveWifhPrice).toFixed(2);

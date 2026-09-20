@@ -35,8 +35,9 @@ bot.catch((err: any, ctx) => {
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const provider = new ethers.JsonRpcProvider(ROBINHOOD_RPC_URL);
 
-const DEX_ROUTER_ADDRESS = process.env.DEX_ROUTER_ADDRESS || '0xE58b3089dF6667fBf99b75595a1671BaF6797D6d';
+const DEX_ROUTER_ADDRESS = process.env.DEX_ROUTER_ADDRESS || '0xcaf681a66d020601342297493863e78c959e5cb2';
 const WETH_ADDRESS = process.env.WETH_ADDRESS || '0x0bd7d308f8e1639fab988df18a8011f41eacad73';
+const UNISWAP_V3_POOL_ADDRESS = '0xCE6d96eb098B8b7c158B7580bf4d12f387E93565';
 
 const ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
@@ -44,11 +45,11 @@ const ERC20_ABI = [
   'function symbol() view returns (string)',
   'function transfer(address to, uint256 amount) returns (bool)',
   'function approve(address spender, uint256 amount) returns (bool)',
+  'function allowance(address owner, address spender) view returns (uint256)',
 ];
 
 const UNISWAP_V3_ROUTER_ABI = [
-  'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)',
-  'function exactInput((bytes path, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum)) external payable returns (uint256 amountOut)',
+  'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)',
 ];
 
 const COOLDOWN_SECONDS = 60;
@@ -106,6 +107,145 @@ async function getEthPriceUsd(): Promise<number> {
     console.warn('Live ETH price fetch failed, using fallback:', e);
   }
   return cachedEthPrice;
+}
+
+let cachedPoolRate = 28000000;
+let lastPoolRateFetch = 0;
+
+async function getPoolRate(): Promise<number> {
+  const now = Date.now();
+  if (now - lastPoolRateFetch < 30000 && cachedPoolRate > 0) return cachedPoolRate;
+  try {
+    const pool = new ethers.Contract(
+      UNISWAP_V3_POOL_ADDRESS,
+      ['function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)'],
+      provider
+    );
+    const s0 = await pool.slot0();
+    const sqrtPriceX96 = s0[0];
+    const q96 = 2n ** 96n;
+    const ratio = Number(sqrtPriceX96) / Number(q96);
+    cachedPoolRate = ratio * ratio;
+    lastPoolRateFetch = now;
+    return cachedPoolRate;
+  } catch (e: any) {
+    console.warn('Live pool rate fetch failed, using fallback:', e?.message || e);
+    return cachedPoolRate;
+  }
+}
+
+async function getWifhPriceUsd(): Promise<number> {
+  const ethPrice = await getEthPriceUsd();
+  const poolRate = await getPoolRate();
+  return ethPrice / poolRate;
+}
+
+// Direct on-chain Uniswap V3 Swap Execution (Treasury is NEVER used as counterparty)
+async function executeOnChainSwap(
+  userWallet: { public_address: string; encrypted_private_key: string },
+  fromToken: 'eth' | 'wifh',
+  toToken: 'eth' | 'wifh',
+  amount: number
+): Promise<{ txHash: string; received: string; receivedUsd: string }> {
+  if (!DEX_ROUTER_ADDRESS || !WIFH_CONTRACT_ADDRESS) {
+    throw new Error('DEX router or WIFH contract address is not configured.');
+  }
+
+  const privateKey = decryptPrivateKey(userWallet.encrypted_private_key);
+  const signer = new ethers.Wallet(privateKey, provider);
+  const routerContract = new ethers.Contract(DEX_ROUTER_ADDRESS, UNISWAP_V3_ROUTER_ABI, signer);
+  const ethPrice = await getEthPriceUsd();
+  const poolRate = await getPoolRate();
+  const wifhPrice = ethPrice / poolRate;
+
+  let txHash = '';
+  let received = '0';
+  let receivedUsd = '0.00';
+
+  if (fromToken === 'eth') {
+    const ethValWei = ethers.parseEther(amount.toFixed(18));
+    const userEthBal = await provider.getBalance(userWallet.public_address);
+    if (userEthBal < ethValWei) {
+      throw new Error(`Insufficient ETH balance. You have ${parseFloat(ethers.formatEther(userEthBal)).toFixed(6)} ETH but need ${amount.toFixed(6)} ETH.`);
+    }
+
+    const params = {
+      tokenIn: WETH_ADDRESS,
+      tokenOut: WIFH_CONTRACT_ADDRESS,
+      fee: 10000,
+      recipient: userWallet.public_address,
+      amountIn: ethValWei,
+      amountOutMinimum: 0,
+      sqrtPriceLimitX96: 0,
+    };
+
+    let expectedWifh = 0n;
+    try {
+      expectedWifh = await routerContract.exactInputSingle.staticCall(params, { value: ethValWei });
+    } catch (e: any) {
+      console.warn('Swap simulation warning:', e.message);
+    }
+
+    const tx = await routerContract.exactInputSingle(params, { value: ethValWei, gasLimit: 350000n });
+    txHash = tx.hash;
+    await tx.wait();
+
+    if (expectedWifh > 0n) {
+      received = ethers.formatUnits(expectedWifh, 18);
+    } else {
+      received = (amount * poolRate).toFixed(2);
+    }
+    receivedUsd = (parseFloat(received) * wifhPrice).toFixed(2);
+
+  } else {
+    // WIFH -> ETH
+    const wifhContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
+    const decimals = await wifhContract.decimals();
+    const wifhAmountWei = ethers.parseUnits(amount.toFixed(Number(decimals)), decimals);
+
+    const userWifhBal = await wifhContract.balanceOf(userWallet.public_address);
+    if (userWifhBal < wifhAmountWei) {
+      throw new Error(`Insufficient WIFH balance. You have ${ethers.formatUnits(userWifhBal, decimals)} WIFH but need ${amount} WIFH.`);
+    }
+
+    const currentAllowance = await wifhContract.allowance(userWallet.public_address, DEX_ROUTER_ADDRESS);
+    if (currentAllowance < wifhAmountWei) {
+      const appTx = await wifhContract.approve(DEX_ROUTER_ADDRESS, ethers.MaxUint256, { gasLimit: 100000n });
+      await appTx.wait();
+    }
+
+    const params = {
+      tokenIn: WIFH_CONTRACT_ADDRESS,
+      tokenOut: WETH_ADDRESS,
+      fee: 10000,
+      recipient: userWallet.public_address,
+      amountIn: wifhAmountWei,
+      amountOutMinimum: 0,
+      sqrtPriceLimitX96: 0,
+    };
+
+    const tx = await routerContract.exactInputSingle(params, { gasLimit: 350000n });
+    txHash = tx.hash;
+    await tx.wait();
+
+    // Unwrap WETH into native ETH
+    const wethContract = new ethers.Contract(WETH_ADDRESS, [
+      'function balanceOf(address) view returns (uint256)',
+      'function withdraw(uint256 wad) public',
+    ], signer);
+
+    const wethBal = await wethContract.balanceOf(userWallet.public_address);
+    if (wethBal > 0n) {
+      const withdrawTx = await wethContract.withdraw(wethBal, { gasLimit: 100000n });
+      await withdrawTx.wait();
+      received = ethers.formatEther(wethBal);
+    } else {
+      received = (amount / poolRate).toFixed(6);
+    }
+    receivedUsd = (parseFloat(received) * ethPrice).toFixed(2);
+  }
+
+  return { txHash, received, receivedUsd };
 }
 
 // ==========================================
@@ -569,63 +709,15 @@ bot.command('swap', async (ctx) => {
   }
 
   try {
-    const RATE_WIFH_PER_ETH = 10000;
-    let received = 0;
-    let receivedStr = '';
-
-    if (fromToken === 'wifh' && toToken === 'eth') {
-      received = amount / RATE_WIFH_PER_ETH;
-      receivedStr = received.toFixed(6);
-    } else {
-      received = amount * RATE_WIFH_PER_ETH;
-      receivedStr = Math.round(received).toString();
-    }
-
-    const statusMsg = await ctx.reply('\u23F3 Calculating rate & executing on-chain swap...');
+    const statusMsg = await ctx.reply('\u23F3 Calculating rate & executing on-chain swap via DEX...');
 
     const senderData = await getOrCreateWallet(ctx.from.id);
-    const privateKey = decryptPrivateKey(senderData.encrypted_private_key);
-    const signer = new ethers.Wallet(privateKey, provider);
+    const result = await executeOnChainSwap(senderData, fromToken as 'eth' | 'wifh', toToken as 'eth' | 'wifh', amount);
 
-    if (DEX_ROUTER_ADDRESS && WIFH_CONTRACT_ADDRESS) {
-      const routerContract = new ethers.Contract(DEX_ROUTER_ADDRESS, UNISWAP_V3_ROUTER_ABI, signer);
-      const deadline = Math.floor(Date.now() / 1000) + 600;
-
-      if (fromToken === 'eth') {
-        const ethValWei = ethers.parseEther(amountStr);
-        const params = {
-          tokenIn: WETH_ADDRESS,
-          tokenOut: WIFH_CONTRACT_ADDRESS,
-          fee: 3000,
-          recipient: senderData.public_address,
-          deadline,
-          amountIn: ethValWei,
-          amountOutMinimum: 0,
-          sqrtPriceLimitX96: 0,
-        };
-        const tx = await routerContract.exactInputSingle(params, { value: ethValWei, gasLimit: 300000n });
-        await tx.wait();
-      } else {
-        const wifhContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
-        const decimals = await wifhContract.decimals();
-        const wifhAmountWei = ethers.parseUnits(amountStr, decimals);
-        const appTx = await wifhContract.approve(DEX_ROUTER_ADDRESS, wifhAmountWei, { gasLimit: 100000n });
-        await appTx.wait();
-
-        const params = {
-          tokenIn: WIFH_CONTRACT_ADDRESS,
-          tokenOut: WETH_ADDRESS,
-          fee: 3000,
-          recipient: senderData.public_address,
-          deadline,
-          amountIn: wifhAmountWei,
-          amountOutMinimum: 0,
-          sqrtPriceLimitX96: 0,
-        };
-        const tx = await routerContract.exactInputSingle(params, { gasLimit: 300000n });
-        await tx.wait();
-      }
-    }
+    const poolRate = await getPoolRate();
+    const rateDisplay = fromToken === 'eth'
+      ? `1 ETH = ${Math.round(poolRate).toLocaleString()} WIFH`
+      : `1 WIFH = ${(1 / poolRate).toFixed(8)} ETH`;
 
     return ctx.telegram.editMessageText(
       ctx.chat.id,
@@ -633,8 +725,9 @@ bot.command('swap', async (ctx) => {
       undefined,
       `\u2705 *SWAP SUCCESSFUL!*\n\n` +
       `\u{1F504} *Paid:* \`${amountStr} ${fromToken.toUpperCase()}\`\n` +
-      `\u{1F389} *Received:* \`${receivedStr} ${toToken.toUpperCase()}\`\n\n` +
-      `_Exchange Rate: 1 ETH = 10,000 WIFH_`,
+      `\u{1F389} *Received:* \`${result.received} ${toToken.toUpperCase()}\` (~\$${result.receivedUsd} USD)\n` +
+      `\u{1F4C8} *Rate:* ${rateDisplay}\n` +
+      `\u{1F517} *Tx:* \`${result.txHash}\``,
       { parse_mode: 'Markdown' }
     );
   } catch (err: any) {
@@ -721,9 +814,7 @@ bot.command('airdrop', async (ctx) => {
   try {
     let tokenAmount = rawValue;
     if (isDollar) {
-      const ethPrice = await getEthPriceUsd();
-      const wifhPriceUsd = ethPrice / 10000;
-      tokenAmount = Math.round(rawValue / wifhPriceUsd);
+      tokenAmount = Math.round(rawValue * 8000);
     }
 
     let destinationAddress = '';
@@ -935,7 +1026,8 @@ const server = http.createServer((req, res) => {
         }
 
         const ethPrice = await getEthPriceUsd();
-        const wifhPriceUsd = (ethPrice / 10000).toFixed(4);
+        const poolRate = await getPoolRate();
+        const wifhPriceUsd = (ethPrice / poolRate).toFixed(8);
 
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(
@@ -946,6 +1038,7 @@ const server = http.createServer((req, res) => {
             wifh_balance: wifhBalance,
             eth_price_usd: ethPrice,
             wifh_price_usd: wifhPriceUsd,
+            pool_rate: poolRate,
           })
         );
       } catch (err: any) {
@@ -969,60 +1062,11 @@ const server = http.createServer((req, res) => {
           return res.end(JSON.stringify({ success: false, error: 'Invalid swap payload parameters' }));
         }
 
-        const RATE_WIFH_PER_ETH = 10000;
-        let received = 0;
-        if (fromToken === 'wifh') {
-          received = amount / RATE_WIFH_PER_ETH;
-        } else {
-          received = amount * RATE_WIFH_PER_ETH;
-        }
-
         const userWallet = await getOrCreateWallet(telegramId);
-        const privateKey = decryptPrivateKey(userWallet.encrypted_private_key);
-        const signer = new ethers.Wallet(privateKey, provider);
-
-        if (DEX_ROUTER_ADDRESS && WIFH_CONTRACT_ADDRESS) {
-          const routerContract = new ethers.Contract(DEX_ROUTER_ADDRESS, UNISWAP_V3_ROUTER_ABI, signer);
-          const deadline = Math.floor(Date.now() / 1000) + 600;
-
-          if (fromToken === 'eth') {
-            const ethValWei = ethers.parseEther(amount.toString());
-            const params = {
-              tokenIn: WETH_ADDRESS,
-              tokenOut: WIFH_CONTRACT_ADDRESS,
-              fee: 3000,
-              recipient: userWallet.public_address,
-              deadline,
-              amountIn: ethValWei,
-              amountOutMinimum: 0,
-              sqrtPriceLimitX96: 0,
-            };
-            const tx = await routerContract.exactInputSingle(params, { value: ethValWei, gasLimit: 300000n });
-            await tx.wait();
-          } else {
-            const wifhContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
-            const decimals = await wifhContract.decimals();
-            const wifhAmountWei = ethers.parseUnits(amount.toString(), decimals);
-            const appTx = await wifhContract.approve(DEX_ROUTER_ADDRESS, wifhAmountWei, { gasLimit: 100000n });
-            await appTx.wait();
-
-            const params = {
-              tokenIn: WIFH_CONTRACT_ADDRESS,
-              tokenOut: WETH_ADDRESS,
-              fee: 3000,
-              recipient: userWallet.public_address,
-              deadline,
-              amountIn: wifhAmountWei,
-              amountOutMinimum: 0,
-              sqrtPriceLimitX96: 0,
-            };
-            const tx = await routerContract.exactInputSingle(params, { gasLimit: 300000n });
-            await tx.wait();
-          }
-        }
+        const result = await executeOnChainSwap(userWallet, fromToken as 'eth' | 'wifh', toToken as 'eth' | 'wifh', amount);
 
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ success: true, received: received.toFixed(4) }));
+        res.end(JSON.stringify({ success: true, received: result.received, received_usd: result.receivedUsd, tx_hash: result.txHash }));
       } catch (err: any) {
         res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(JSON.stringify({ success: false, error: err.message }));
