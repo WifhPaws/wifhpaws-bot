@@ -145,6 +145,9 @@
         let currentUserId = null;
         // Example Exchange Rate: 1 WIFH = 0.0001 ETH (1 ETH = 10,000 WIFH)
         const RATE_WIFH_PER_ETH = 10000;
+        const API_BASE_URL = (window.location.hostname.includes('github.io') || window.location.protocol === 'file:')
+            ? 'https://wifhpaws-bot.onrender.com'
+            : '';
 
         function toggleSwapDirection() {
             const fromToken = document.getElementById('swap-from').value;
@@ -185,7 +188,7 @@
             btn.disabled = true;
 
             try {
-                const response = await fetch('/api/swap', {
+                const response = await fetch(`${API_BASE_URL}/api/swap`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -248,7 +251,7 @@
 
                     // Fetch live balances from backend
                     try {
-                        const response = await fetch(`/api/balance?telegram_id=${user.id}`);
+                        const response = await fetch(`${API_BASE_URL}/api/balance?telegram_id=${user.id}`);
                         const data = await response.json();
                         if (data.success) {
                             document.getElementById('wifh-balance').innerText = `${data.wifh_balance} WIFH`;
