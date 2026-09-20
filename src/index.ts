@@ -35,11 +35,20 @@ bot.catch((err: any, ctx) => {
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const provider = new ethers.JsonRpcProvider(ROBINHOOD_RPC_URL);
 
+const DEX_ROUTER_ADDRESS = process.env.DEX_ROUTER_ADDRESS || '0xE58b3089dF6667fBf99b75595a1671BaF6797D6d';
+const WETH_ADDRESS = process.env.WETH_ADDRESS || '0x0bd7d308f8e1639fab988df18a8011f41eacad73';
+
 const ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
   'function decimals() view returns (uint8)',
   'function symbol() view returns (string)',
   'function transfer(address to, uint256 amount) returns (bool)',
+  'function approve(address spender, uint256 amount) returns (bool)',
+];
+
+const UNISWAP_V3_ROUTER_ABI = [
+  'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)',
+  'function exactInput((bytes path, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum)) external payable returns (uint256 amountOut)',
 ];
 
 const COOLDOWN_SECONDS = 60;
@@ -578,33 +587,43 @@ bot.command('swap', async (ctx) => {
     const privateKey = decryptPrivateKey(senderData.encrypted_private_key);
     const signer = new ethers.Wallet(privateKey, provider);
 
-    if (treasurySigner && WIFH_CONTRACT_ADDRESS) {
+    if (DEX_ROUTER_ADDRESS && WIFH_CONTRACT_ADDRESS) {
+      const routerContract = new ethers.Contract(DEX_ROUTER_ADDRESS, UNISWAP_V3_ROUTER_ABI, signer);
+      const deadline = Math.floor(Date.now() / 1000) + 600;
+
       if (fromToken === 'eth') {
-        const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
-        const decimals = await contract.decimals();
-        const wifhNeededWei = ethers.parseUnits(receivedStr, decimals);
-        const treasuryWifhWei = await contract.balanceOf(treasurySigner.address);
-        if (treasuryWifhWei < wifhNeededWei) {
-          return ctx.reply(`\u274C Swap cannot be completed: The Treasury wallet needs WIFH tokens to fulfill swaps. Please send WIFH to Treasury address: \`${treasurySigner.address}\``, { parse_mode: 'Markdown' });
-        }
-
-        const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amountStr), gasLimit: 100000n });
+        const ethValWei = ethers.parseEther(amountStr);
+        const params = {
+          tokenIn: WETH_ADDRESS,
+          tokenOut: WIFH_CONTRACT_ADDRESS,
+          fee: 3000,
+          recipient: senderData.public_address,
+          deadline,
+          amountIn: ethValWei,
+          amountOutMinimum: 0,
+          sqrtPriceLimitX96: 0,
+        };
+        const tx = await routerContract.exactInputSingle(params, { value: ethValWei, gasLimit: 300000n });
         await tx.wait();
-        const t2 = await contract.transfer(senderData.public_address, wifhNeededWei, { gasLimit: 150000n });
-        await t2.wait();
       } else {
-        const treasuryEthWei = await provider.getBalance(treasurySigner.address);
-        const ethNeededWei = ethers.parseEther(receivedStr);
-        if (treasuryEthWei < ethNeededWei) {
-          return ctx.reply(`\u274C Swap cannot be completed: The Treasury wallet needs ETH gas/funds to fulfill swaps.`);
-        }
+        const wifhContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
+        const decimals = await wifhContract.decimals();
+        const wifhAmountWei = ethers.parseUnits(amountStr, decimals);
+        const appTx = await wifhContract.approve(DEX_ROUTER_ADDRESS, wifhAmountWei, { gasLimit: 100000n });
+        await appTx.wait();
 
-        const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
-        const decimals = await contract.decimals();
-        const tx = await contract.transfer(treasurySigner.address, ethers.parseUnits(amountStr, decimals), { gasLimit: 150000n });
+        const params = {
+          tokenIn: WIFH_CONTRACT_ADDRESS,
+          tokenOut: WETH_ADDRESS,
+          fee: 3000,
+          recipient: senderData.public_address,
+          deadline,
+          amountIn: wifhAmountWei,
+          amountOutMinimum: 0,
+          sqrtPriceLimitX96: 0,
+        };
+        const tx = await routerContract.exactInputSingle(params, { gasLimit: 300000n });
         await tx.wait();
-        const t2 = await treasurySigner.sendTransaction({ to: senderData.public_address, value: ethNeededWei, gasLimit: 100000n });
-        await t2.wait();
       }
     }
 
@@ -962,37 +981,43 @@ const server = http.createServer((req, res) => {
         const privateKey = decryptPrivateKey(userWallet.encrypted_private_key);
         const signer = new ethers.Wallet(privateKey, provider);
 
-        if (treasurySigner && WIFH_CONTRACT_ADDRESS) {
+        if (DEX_ROUTER_ADDRESS && WIFH_CONTRACT_ADDRESS) {
+          const routerContract = new ethers.Contract(DEX_ROUTER_ADDRESS, UNISWAP_V3_ROUTER_ABI, signer);
+          const deadline = Math.floor(Date.now() / 1000) + 600;
+
           if (fromToken === 'eth') {
-            const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
-            const decimals = await contract.decimals();
-            const wifhNeededWei = ethers.parseUnits(Math.round(received).toString(), decimals);
-            const treasuryWifhWei = await contract.balanceOf(treasurySigner.address);
-
-            if (treasuryWifhWei < wifhNeededWei) {
-              res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-              return res.end(JSON.stringify({ success: false, error: `Treasury wallet has 0 WIFH tokens to fulfill swaps! Send WIFH tokens to Treasury: ${treasurySigner.address}` }));
-            }
-
-            const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amount.toString()), gasLimit: 100000n });
+            const ethValWei = ethers.parseEther(amount.toString());
+            const params = {
+              tokenIn: WETH_ADDRESS,
+              tokenOut: WIFH_CONTRACT_ADDRESS,
+              fee: 3000,
+              recipient: userWallet.public_address,
+              deadline,
+              amountIn: ethValWei,
+              amountOutMinimum: 0,
+              sqrtPriceLimitX96: 0,
+            };
+            const tx = await routerContract.exactInputSingle(params, { value: ethValWei, gasLimit: 300000n });
             await tx.wait();
-            const t2 = await contract.transfer(userWallet.public_address, wifhNeededWei, { gasLimit: 150000n });
-            await t2.wait();
           } else {
-            const treasuryEthWei = await provider.getBalance(treasurySigner.address);
-            const ethNeededWei = ethers.parseEther(received.toFixed(6));
+            const wifhContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
+            const decimals = await wifhContract.decimals();
+            const wifhAmountWei = ethers.parseUnits(amount.toString(), decimals);
+            const appTx = await wifhContract.approve(DEX_ROUTER_ADDRESS, wifhAmountWei, { gasLimit: 100000n });
+            await appTx.wait();
 
-            if (treasuryEthWei < ethNeededWei) {
-              res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-              return res.end(JSON.stringify({ success: false, error: 'Treasury wallet needs ETH to fulfill swaps!' }));
-            }
-
-            const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
-            const decimals = await contract.decimals();
-            const tx = await contract.transfer(treasurySigner.address, ethers.parseUnits(amount.toString(), decimals), { gasLimit: 150000n });
+            const params = {
+              tokenIn: WIFH_CONTRACT_ADDRESS,
+              tokenOut: WETH_ADDRESS,
+              fee: 3000,
+              recipient: userWallet.public_address,
+              deadline,
+              amountIn: wifhAmountWei,
+              amountOutMinimum: 0,
+              sqrtPriceLimitX96: 0,
+            };
+            const tx = await routerContract.exactInputSingle(params, { gasLimit: 300000n });
             await tx.wait();
-            const t2 = await treasurySigner.sendTransaction({ to: userWallet.public_address, value: ethNeededWei, gasLimit: 100000n });
-            await t2.wait();
           }
         }
 
