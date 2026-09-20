@@ -159,24 +159,7 @@ bot.command('start', async (ctx) => {
   const args = message?.text?.split(/\s+/)[1];
 
   if (args === 'wallet' && ctx.chat.type === 'private') {
-    try {
-      const wallet = await getOrCreateWallet(ctx.from.id);
-      return ctx.reply(
-        `🐾 *Your WifhPaws Wallet is Ready!*\n\n` +
-        `📍 *Address:*\n\`${wallet.public_address}\`\n\n` +
-        `Tap below to open your wallet dashboard:`,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "💎 Open Wallet Dashboard", web_app: { url: WEBAPP_URL } }]
-            ]
-          }
-        }
-      );
-    } catch (e: any) {
-      return ctx.reply(`❌ Error: ${e.message}`);
-    }
+    return sendWalletDashboard(ctx, ctx.from.id);
   }
 
   if (userId && isAdmin(userId)) {
@@ -228,6 +211,50 @@ bot.command('start', async (ctx) => {
   }
 });
 
+async function sendWalletDashboard(ctx: Context, telegramId: number) {
+  try {
+    const wallet = await getOrCreateWallet(telegramId);
+    let ethBalance = '0.0000';
+    try {
+      const ethBalanceWei = await provider.getBalance(wallet.public_address);
+      ethBalance = parseFloat(ethers.formatEther(ethBalanceWei)).toFixed(4);
+    } catch (e: any) {
+      console.warn('RPC ETH balance error:', e.message);
+    }
+
+    let wifhBalance = '0.0';
+    if (WIFH_CONTRACT_ADDRESS) {
+      try {
+        const tokenContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, provider);
+        const rawBalance = await tokenContract.balanceOf(wallet.public_address);
+        const decimals = await tokenContract.decimals();
+        wifhBalance = ethers.formatUnits(rawBalance, decimals);
+      } catch (e) {
+        wifhBalance = '0.0';
+      }
+    }
+
+    const messageText = `🐾 *WifhPaws Wallet Dashboard*\n\n📍 *Address:*\n\`${wallet.public_address}\`\n\n💰 *Balances (Robinhood Chain):*\n• *ETH (Gas):* \`${ethBalance} ETH\`\n• *WIFH Token:* \`${wifhBalance}\`\n\nChoose an option below:`;
+
+    const keyboard: any[] = [
+      [{ text: '🚀 Launch Mini App Dashboard', web_app: { url: WEBAPP_URL } }],
+      [{ text: '📥 Receive', callback_data: 'action_receive' }, { text: '💸 Send', callback_data: 'action_send_guide' }],
+      [{ text: '🔑 Export Private Key', callback_data: 'action_export_key' }]
+    ];
+
+    if (isAdmin(telegramId)) {
+      keyboard.push([{ text: '🛡️ Open Admin Panel', callback_data: 'action_open_admin' }]);
+    }
+
+    return ctx.replyWithMarkdownV2(
+      messageText.replace(/([-_ *\[\]().~`>#+=|{}.!])/g, '\\$1'),
+      { reply_markup: { inline_keyboard: keyboard } }
+    );
+  } catch (err: any) {
+    return ctx.reply(`❌ Error accessing wallet: ${err.message}`);
+  }
+}
+
 bot.command('wallet', async (ctx) => {
   if (ctx.chat.type !== 'private') {
     const botUsername = ctx.botInfo?.username || 'WifhPawsBot';
@@ -242,38 +269,7 @@ bot.command('wallet', async (ctx) => {
       }
     );
   }
-
-  const telegramId = ctx.from.id;
-  try {
-    const wallet = await getOrCreateWallet(telegramId);
-    const ethBalanceWei = await provider.getBalance(wallet.public_address);
-    const ethBalance = ethers.formatEther(ethBalanceWei);
-
-    let wifhBalance = '0.0';
-    if (WIFH_CONTRACT_ADDRESS) {
-      try {
-        const tokenContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, provider);
-        const rawBalance = await tokenContract.balanceOf(wallet.public_address);
-        const decimals = await tokenContract.decimals();
-        wifhBalance = ethers.formatUnits(rawBalance, decimals);
-      } catch (e) {
-        wifhBalance = '0.0';
-      }
-    }
-
-    const messageText = `🐾 *WifhPaws Wallet Dashboard*\n\n📍 *Address:*\n\`${wallet.public_address}\`\n\n💰 *Balances (Robinhood Chain):*\n• *ETH (Gas):* \`${parseFloat(ethBalance).toFixed(4)} ETH\`\n• *WIFH Token:* \`${wifhBalance}\`\n\nChoose an option below:`;
-
-    return ctx.replyWithMarkdownV2(
-      messageText.replace(/([-_ *\[\]().~`>#+=|{}.!])/g, '\\$1'),
-      Markup.inlineKeyboard([
-        [Markup.button.webApp('🚀 Launch Mini App Dashboard', WEBAPP_URL)],
-        [Markup.button.callback('📥 Receive', 'action_receive'), Markup.button.callback('💸 Send', 'action_send_guide')],
-        [Markup.button.callback('🔑 Export Private Key', 'action_export_key')],
-      ])
-    );
-  } catch (err: any) {
-    return ctx.reply(`❌ Error accessing wallet: ${err.message}`);
-  }
+  return sendWalletDashboard(ctx, ctx.from.id);
 });
 
 // Callback Actions
@@ -393,27 +389,38 @@ bot.action('action_my_wallet', async (ctx) => {
       }
     );
   }
+  return sendWalletDashboard(ctx, ctx.from.id);
+});
+
+bot.action('action_open_admin', async (ctx) => {
+  await ctx.answerCbQuery();
+  const senderId = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
+
+  const adminKeyboard: any[] = [
+    [
+      { text: "🏦 View Treasury", callback_data: "admin_treasury" },
+      { text: "🪂 Airdrop Token", callback_data: "admin_airdrop" }
+    ],
+    [
+      { text: "⚙️ Reset Points", callback_data: "admin_reset" },
+      { text: "🔑 Keywords", callback_data: "admin_keywords" }
+    ]
+  ];
   
-  // Directly invoke the wallet logic
-  const telegramId = ctx.from.id;
-  try {
-    const wallet = await getOrCreateWallet(telegramId);
-    return ctx.reply(
-      `🐾 *Your WifhPaws Wallet is Ready!*\n\n` +
-      `📍 *Address:*\n\`${wallet.public_address}\`\n\n` +
-      `Tap below to open your wallet dashboard:`,
-      {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "💎 Open Wallet Dashboard", web_app: { url: WEBAPP_URL } }]
-          ]
-        }
-      }
-    );
-  } catch (e: any) {
-    return ctx.reply(`❌ Error: ${e.message}`);
+  if (ctx.chat?.type === 'private') {
+    adminKeyboard.push([
+      { text: "💳 Manage My Wallet", callback_data: "action_my_wallet" },
+      { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
+    ]);
+  } else {
+    adminKeyboard.push([{ text: "💳 Manage My Wallet", callback_data: "action_my_wallet" }]);
   }
+
+  return ctx.reply("🛡️ *WifhPaws Admin Control Center*\n\nSelect an option below:", {
+    parse_mode: "Markdown",
+    reply_markup: { inline_keyboard: adminKeyboard }
+  });
 });
 
 // Transfer Command (/send)
