@@ -191,6 +191,10 @@ bot.command('start', async (ctx) => {
           ],
           [
             { text: "⚙️ Reset Points", callback_data: "admin_reset" },
+            { text: "🔑 Keywords", callback_data: "admin_keywords" }
+          ],
+          [
+            { text: "💳 Manage My Wallet", callback_data: "action_my_wallet" },
             { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
           ]
         ]
@@ -352,6 +356,54 @@ bot.action('admin_reset', async (ctx) => {
   );
 });
 
+bot.action('admin_keywords', async (ctx) => {
+  await ctx.answerCbQuery();
+  const senderId = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
+  return ctx.reply(
+    `🔑 *Secret Keyword Controls:*\n\n` +
+    `• \`/addkeyword [word] [points]\` — Create a hidden chat trigger\n` +
+    `• \`/removekeyword [word]\` — Delete an existing keyword\n` +
+    `• \`/keywords\` — View all active hidden keywords`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+bot.action('action_my_wallet', async (ctx) => {
+  await ctx.answerCbQuery();
+  if (ctx.chat?.type !== 'private') {
+    const botInfo = await ctx.telegram.getMe();
+    return ctx.reply(
+      '🔒 For your privacy and security, wallet details are managed in private messages.',
+      Markup.inlineKeyboard([
+        [Markup.button.url('📩 Open Private Wallet', `https://t.me/${botInfo.username}?start=wallet`)],
+        [Markup.button.webApp('🚀 Open Mini App', WEBAPP_URL)],
+      ])
+    );
+  }
+  
+  // Directly invoke the wallet logic
+  const telegramId = ctx.from.id;
+  try {
+    const wallet = await getOrCreateWallet(telegramId);
+    return ctx.reply(
+      `🐾 *Your WifhPaws Wallet is Ready!*\n\n` +
+      `📍 *Address:*\n\`${wallet.public_address}\`\n\n` +
+      `Tap below to open your wallet dashboard:`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "💎 Open Wallet Dashboard", web_app: { url: WEBAPP_URL } }]
+          ]
+        }
+      }
+    );
+  } catch (e: any) {
+    return ctx.reply(`❌ Error: ${e.message}`);
+  }
+});
+
 // Transfer Command (/send)
 bot.command('send', async (ctx) => {
   if (ctx.chat.type !== 'private') return ctx.reply('🔒 Transfers can only be initiated in private messages for security.');
@@ -436,6 +488,10 @@ bot.command('admin', async (ctx) => {
         ],
         [
           { text: "⚙️ Reset Points", callback_data: "admin_reset" },
+          { text: "🔑 Keywords", callback_data: "admin_keywords" }
+        ],
+        [
+          { text: "💳 Manage My Wallet", callback_data: "action_my_wallet" },
           { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
         ]
       ]
