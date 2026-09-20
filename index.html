@@ -82,6 +82,19 @@
         .btn-deposit { background: linear-gradient(135deg, #7c3aed, #4f46e5); }
         .btn-send { background: linear-gradient(135deg, #059669, #10b981); }
         .btn-swap { background: linear-gradient(135deg, #10b981, #059669); }
+        .preset-btn {
+            background: rgba(39, 217, 123, 0.15);
+            border: 1px solid rgba(39, 217, 123, 0.4);
+            color: #27d97b;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .preset-btn:hover {
+            background: rgba(39, 217, 123, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -100,12 +113,18 @@
             
             <div class="asset-row">
                 <span>🐶 WIFH Token</span>
-                <span id="wifh-balance" style="font-weight: bold; color: #10b981;">Loading...</span>
+                <div style="text-align: right;">
+                    <div id="wifh-balance" style="font-weight: bold; color: #10b981;">Loading...</div>
+                    <div id="wifh-usd" style="font-size: 10px; color: #8fa89d;">$0.00 USD</div>
+                </div>
             </div>
             
             <div class="asset-row">
                 <span>⚡ ETH (Gas)</span>
-                <span id="eth-balance" style="font-weight: bold; color: #10b981;">Loading...</span>
+                <div style="text-align: right;">
+                    <div id="eth-balance" style="font-weight: bold; color: #10b981;">Loading...</div>
+                    <div id="eth-usd" style="font-size: 10px; color: #8fa89d;">$0.00 USD</div>
+                </div>
             </div>
 
             <div class="btn-group">
@@ -119,22 +138,32 @@
             <div style="font-size: 12px; color: #10b981; font-weight: bold; margin-bottom: 12px;">🔄 INSTANT TOKEN SWAP</div>
             
             <div style="margin-bottom: 12px;">
-                <label style="font-size: 11px; color: #8fa89d; display: block; margin-bottom: 4px;">YOU PAY</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <label style="font-size: 11px; color: #8fa89d;">YOU PAY</label>
+                    <div style="display: flex; gap: 4px;">
+                        <button class="preset-btn" onclick="setPresetDollar(1)">$1</button>
+                        <button class="preset-btn" onclick="setPresetDollar(2)">$2</button>
+                        <button class="preset-btn" onclick="setPresetDollar(5)">$5</button>
+                        <button class="preset-btn" onclick="setPresetDollar(10)">$10</button>
+                    </div>
+                </div>
                 <div style="display: flex; gap: 8px;">
                     <input type="number" id="swap-amount" placeholder="0.0" oninput="updateEstimate()" style="flex: 1; background: rgba(5, 25, 16, 0.8); border: 1px solid rgba(26, 110, 71, 0.5); border-radius: 8px; color: white; padding: 10px; font-size: 14px; outline: none;">
                     <select id="swap-from" onchange="toggleSwapDirection()" style="background: rgba(5, 25, 16, 0.8); border: 1px solid rgba(26, 110, 71, 0.5); border-radius: 8px; color: #10b981; padding: 10px; font-weight: bold; outline: none;">
-                        <option value="WIFH">WIFH</option>
                         <option value="ETH">ETH</option>
+                        <option value="WIFH">WIFH</option>
                     </select>
                 </div>
+                <div id="pay-usd-val" style="font-size: 11px; color: #8fa89d; margin-top: 4px;">≈ $0.00 USD</div>
             </div>
 
             <div style="margin-bottom: 16px;">
                 <label style="font-size: 11px; color: #8fa89d; display: block; margin-bottom: 4px;">YOU RECEIVE (ESTIMATED)</label>
                 <div style="display: flex; gap: 8px;">
                     <input type="text" id="swap-receive" placeholder="0.0" readonly style="flex: 1; background: rgba(5, 25, 16, 0.5); border: 1px solid rgba(26, 110, 71, 0.2); border-radius: 8px; color: #27d97b; padding: 10px; font-size: 14px; font-weight: bold; outline: none;">
-                    <span id="swap-to-label" style="background: rgba(5, 25, 16, 0.8); border: 1px solid rgba(26, 110, 71, 0.5); border-radius: 8px; color: #27d97b; padding: 10px; font-weight: bold; min-width: 60px; text-align: center; display: flex; align-items: center; justify-content: center;">ETH</span>
+                    <span id="swap-to-label" style="background: rgba(5, 25, 16, 0.8); border: 1px solid rgba(26, 110, 71, 0.5); border-radius: 8px; color: #27d97b; padding: 10px; font-weight: bold; min-width: 60px; text-align: center; display: flex; align-items: center; justify-content: center;">WIFH</span>
                 </div>
+                <div id="receive-usd-val" style="font-size: 11px; color: #27d97b; margin-top: 4px;">≈ $0.00 USD</div>
             </div>
 
             <button id="btn-execute-swap" class="btn btn-swap" style="width: 100%;" onclick="handleSwap()">Swap Tokens Now</button>
@@ -143,11 +172,25 @@
 
     <script>
         let currentUserId = null;
-        // Example Exchange Rate: 1 WIFH = 0.0001 ETH (1 ETH = 10,000 WIFH)
+        let liveEthPrice = 2500;
+        let liveWifhPrice = 0.25;
         const RATE_WIFH_PER_ETH = 10000;
+
         const API_BASE_URL = (window.location.hostname.includes('github.io') || window.location.protocol === 'file:')
             ? 'https://wifhpaws-bot.onrender.com'
             : window.location.origin;
+
+        function setPresetDollar(dollars) {
+            const fromToken = document.getElementById('swap-from').value;
+            if (fromToken === 'ETH') {
+                const ethVal = dollars / liveEthPrice;
+                document.getElementById('swap-amount').value = ethVal.toFixed(6);
+            } else {
+                const wifhVal = dollars / liveWifhPrice;
+                document.getElementById('swap-amount').value = Math.round(wifhVal);
+            }
+            updateEstimate();
+        }
 
         function toggleSwapDirection() {
             const fromToken = document.getElementById('swap-from').value;
@@ -159,13 +202,23 @@
             const amount = parseFloat(document.getElementById('swap-amount').value) || 0;
             const fromToken = document.getElementById('swap-from').value;
             let receive = 0;
+            let payUsd = 0;
+            let receiveUsd = 0;
+
             if (fromToken === 'WIFH') {
                 receive = amount / RATE_WIFH_PER_ETH;
+                payUsd = amount * liveWifhPrice;
+                receiveUsd = receive * liveEthPrice;
                 document.getElementById('swap-receive').value = receive > 0 ? receive.toFixed(6) : '0.0';
             } else {
                 receive = amount * RATE_WIFH_PER_ETH;
-                document.getElementById('swap-receive').value = receive > 0 ? receive.toLocaleString() : '0.0';
+                payUsd = amount * liveEthPrice;
+                receiveUsd = receive * liveWifhPrice;
+                document.getElementById('swap-receive').value = receive > 0 ? Math.round(receive).toLocaleString() : '0.0';
             }
+
+            document.getElementById('pay-usd-val').innerText = `≈ $${payUsd.toFixed(2)} USD`;
+            document.getElementById('receive-usd-val').innerText = `≈ $${receiveUsd.toFixed(2)} USD`;
         }
 
         async function handleSwap() {
@@ -249,13 +302,22 @@
                         document.getElementById('user-handle').innerText = '@' + user.username;
                     }
 
-                    // Fetch live balances from backend
+                    // Fetch live balances & prices from backend
                     try {
                         const response = await fetch(`${API_BASE_URL}/api/balance?telegram_id=${user.id}`);
                         const data = await response.json();
                         if (data.success) {
                             document.getElementById('wifh-balance').innerText = `${data.wifh_balance} WIFH`;
                             document.getElementById('eth-balance').innerText = `${data.eth_balance} ETH`;
+                            
+                            if (data.eth_price_usd) liveEthPrice = parseFloat(data.eth_price_usd);
+                            if (data.wifh_price_usd) liveWifhPrice = parseFloat(data.wifh_price_usd);
+
+                            const ethUsd = (parseFloat(data.eth_balance) * liveEthPrice).toFixed(2);
+                            const wifhUsd = (parseFloat(data.wifh_balance) * liveWifhPrice).toFixed(2);
+
+                            document.getElementById('eth-usd').innerText = `$${ethUsd} USD`;
+                            document.getElementById('wifh-usd').innerText = `$${wifhUsd} USD`;
                         } else {
                             document.getElementById('wifh-balance').innerText = '0 WIFH';
                             document.getElementById('eth-balance').innerText = '0 ETH';

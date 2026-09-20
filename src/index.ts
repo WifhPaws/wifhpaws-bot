@@ -39,7 +39,7 @@ const ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
   'function decimals() view returns (uint8)',
   'function symbol() view returns (string)',
-  'function transfer(address to, uint256 amount) returns (boolean)',
+  'function transfer(address to, uint256 amount) returns (bool)',
 ];
 
 const COOLDOWN_SECONDS = 60;
@@ -77,6 +77,26 @@ function decryptPrivateKey(encryptedData: string): string {
   let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
   return decrypted;
+}
+
+let cachedEthPrice = 2500;
+let lastEthPriceFetch = 0;
+
+async function getEthPriceUsd(): Promise<number> {
+  const now = Date.now();
+  if (now - lastEthPriceFetch < 60000 && cachedEthPrice > 0) return cachedEthPrice;
+  try {
+    const res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT');
+    const data = (await res.json()) as any;
+    if (data && data.price) {
+      cachedEthPrice = parseFloat(data.price);
+      lastEthPriceFetch = now;
+      return cachedEthPrice;
+    }
+  } catch (e) {
+    console.warn('Live ETH price fetch failed, using fallback:', e);
+  }
+  return cachedEthPrice;
 }
 
 // ==========================================
@@ -658,12 +678,23 @@ bot.command('airdrop', async (ctx) => {
   if (!treasurySigner) return ctx.reply('\u274C Project Treasury wallet is not configured. Add `TREASURY_PRIVATE_KEY` to Render environment variables.');
   const args = ctx.message.text.split(' ').filter(Boolean);
   if (args.length < 3) {
-    return ctx.reply('\u26A0\uFE0F *Admin Airdrop Usage:* `/airdrop [@username or 0xAddress] [amount]`\n\n*Example:*\n`/airdrop @username 500`', { parse_mode: 'Markdown' });
+    return ctx.reply('\u26A0\uFE0F *Admin Airdrop Usage:* `/airdrop [@username or 0xAddress] [amount or $dollarAmount]`\n\n*Examples:*\n\u2022 `/airdrop @username $10` (Airdrop $10 worth of WIFH)\n\u2022 `/airdrop @username 500` (Airdrop 500 WIFH tokens)', { parse_mode: 'Markdown' });
   }
   const targetInput: string = String(args[1] || '');
-  const amountStr = args[2];
-  if (isNaN(Number(amountStr)) || Number(amountStr) <= 0) return ctx.reply('\u274C Invalid airdrop amount.');
+  let rawAmountStr = args[2].trim();
+  let isDollar = rawAmountStr.includes('$');
+  let rawValue = parseFloat(rawAmountStr.replace('$', ''));
+
+  if (isNaN(rawValue) || rawValue <= 0) return ctx.reply('\u274C Invalid airdrop amount.');
+
   try {
+    let tokenAmount = rawValue;
+    if (isDollar) {
+      const ethPrice = await getEthPriceUsd();
+      const wifhPriceUsd = ethPrice / 10000;
+      tokenAmount = Math.round(rawValue / wifhPriceUsd);
+    }
+
     let destinationAddress = '';
     if ((ethers.isAddress as any)(targetInput)) {
       destinationAddress = targetInput;
@@ -676,13 +707,13 @@ bot.command('airdrop', async (ctx) => {
     const statusMsg = await ctx.reply('\u23F3 Executing Treasury Airdrop on Robinhood Chain...');
     const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
     const decimals = await contract.decimals();
-    const tx = await contract.transfer(destinationAddress, ethers.parseUnits(amountStr, decimals));
+    const tx = await contract.transfer(destinationAddress, ethers.parseUnits(tokenAmount.toString(), decimals));
     await tx.wait();
     return ctx.telegram.editMessageText(
       ctx.chat.id,
       statusMsg.message_id,
       undefined,
-      `\u{1F389} *AIRDROP SUCCESSFUL!*\n\n\u{1F381} *Amount:* \`${amountStr} WIFH\`\n\u{1F4CD} *Recipient:* \`${destinationAddress}\`\n\u{1F517} *Tx Hash:* \`${tx.hash}\``,
+      `\u{1F389} *AIRDROP SUCCESSFUL!*\n\n\u{1F381} *Amount:* \`${tokenAmount} WIFH\`${isDollar ? ` _(~$${rawValue.toFixed(2)} USD)_` : ''}\n\u{1F4CD} *Recipient:* \`${destinationAddress}\`\n\u{1F517} *Tx Hash:* \`${tx.hash}\``,
       { parse_mode: 'Markdown' }
     );
   } catch (err: any) {
@@ -872,6 +903,9 @@ const server = http.createServer((req, res) => {
           }
         }
 
+        const ethPrice = await getEthPriceUsd();
+        const wifhPriceUsd = (ethPrice / 10000).toFixed(4);
+
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(
           JSON.stringify({
@@ -879,6 +913,8 @@ const server = http.createServer((req, res) => {
             address: wallet.public_address,
             eth_balance: ethBalance,
             wifh_balance: wifhBalance,
+            eth_price_usd: ethPrice,
+            wifh_price_usd: wifhPriceUsd,
           })
         );
       } catch (err: any) {
