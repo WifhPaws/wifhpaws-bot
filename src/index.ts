@@ -426,8 +426,21 @@ bot.command('admin', async (ctx) => {
   const senderId = ctx.from.id;
   if (!isAdmin(senderId)) return ctx.reply('⛔ Unauthorized. This command is restricted to project administrators.');
 
-  const adminHelpText = `🛡️ *WifhPaws Admin Control Center*\n\nYou are authenticated as an official project administrator. Here are the tools available to you:\n\n🎁 *Treasury & Airdrops*\n• \`/treasury\` — _Check central project wallet balances._\n• \`/airdrop [@username or 0xAddress] [amount]\` — _Send real WIFH tokens on Robinhood Chain._\n\n⭐ *Point Management*\n• \`/addpoints [@username] [amount]\` — _Reward specific users._\n• \`/resetpoints [@username]\` — _Clear a specific user's points._\n• \`/resetallpoints\` — _Clear points for ALL users on the leaderboard._\n\n🔑 *Secret Keyword Controls*\n• \`/addkeyword [word] [points]\` — _Create a hidden chat trigger._\n• \`/removekeyword [word]\` — _Delete an existing keyword._\n• \`/keywords\` — _View all active hidden keywords._`;
-  return ctx.replyWithMarkdownV2(adminHelpText.replace(/([-_ *\[\]().~`>#+=|{}.!])/g, '\\$1'));
+  return ctx.reply("🛡️ *WifhPaws Admin Control Center*\n\nSelect an option below:", {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "🏦 View Treasury", callback_data: "admin_treasury" },
+          { text: "🪂 Airdrop Token", callback_data: "admin_airdrop" }
+        ],
+        [
+          { text: "⚙️ Reset Points", callback_data: "admin_reset" },
+          { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
+        ]
+      ]
+    }
+  });
 });
 
 bot.command('treasury', async (ctx) => {
