@@ -147,7 +147,7 @@
         const RATE_WIFH_PER_ETH = 10000;
         const API_BASE_URL = (window.location.hostname.includes('github.io') || window.location.protocol === 'file:')
             ? 'https://wifhpaws-bot.onrender.com'
-            : '';
+            : window.location.origin;
 
         function toggleSwapDirection() {
             const fromToken = document.getElementById('swap-from').value;
