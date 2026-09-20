@@ -507,14 +507,14 @@ bot.command('send', async (ctx) => {
     const statusMsg = await ctx.reply('\u23F3 Processing transaction on Robinhood Chain...');
     let txHash = '';
     if (tokenType === 'eth') {
-      const tx = await signer.sendTransaction({ to: destinationAddress, value: ethers.parseEther(amountStr) });
+      const tx = await signer.sendTransaction({ to: destinationAddress, value: ethers.parseEther(amountStr), gasLimit: 100000n });
       txHash = tx.hash;
       await tx.wait();
     } else if (tokenType === 'wifh') {
       if (!WIFH_CONTRACT_ADDRESS) return ctx.reply('\u274C WIFH contract address is not configured.');
       const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
       const decimals = await contract.decimals();
-      const tx = await contract.transfer(destinationAddress, ethers.parseUnits(amountStr, decimals));
+      const tx = await contract.transfer(destinationAddress, ethers.parseUnits(amountStr, decimals), { gasLimit: 150000n });
       txHash = tx.hash;
       await tx.wait();
     } else {
@@ -569,7 +569,7 @@ bot.command('swap', async (ctx) => {
       receivedStr = received.toFixed(6);
     } else {
       received = amount * RATE_WIFH_PER_ETH;
-      receivedStr = received.toLocaleString();
+      receivedStr = Math.round(received).toString();
     }
 
     const statusMsg = await ctx.reply('\u23F3 Calculating rate & executing on-chain swap...');
@@ -580,18 +580,18 @@ bot.command('swap', async (ctx) => {
 
     if (treasurySigner && WIFH_CONTRACT_ADDRESS) {
       if (fromToken === 'eth') {
-        const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amountStr) });
+        const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amountStr), gasLimit: 100000n });
         await tx.wait();
         const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
         const decimals = await contract.decimals();
-        const t2 = await contract.transfer(senderData.public_address, ethers.parseUnits(receivedStr, decimals));
+        const t2 = await contract.transfer(senderData.public_address, ethers.parseUnits(receivedStr, decimals), { gasLimit: 150000n });
         await t2.wait();
       } else {
         const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
         const decimals = await contract.decimals();
-        const tx = await contract.transfer(treasurySigner.address, ethers.parseUnits(amountStr, decimals));
+        const tx = await contract.transfer(treasurySigner.address, ethers.parseUnits(amountStr, decimals), { gasLimit: 150000n });
         await tx.wait();
-        const t2 = await treasurySigner.sendTransaction({ to: senderData.public_address, value: ethers.parseEther(receivedStr) });
+        const t2 = await treasurySigner.sendTransaction({ to: senderData.public_address, value: ethers.parseEther(receivedStr), gasLimit: 100000n });
         await t2.wait();
       }
     }
@@ -952,18 +952,18 @@ const server = http.createServer((req, res) => {
 
         if (treasurySigner && WIFH_CONTRACT_ADDRESS) {
           if (fromToken === 'eth') {
-            const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amount.toString()) });
+            const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amount.toString()), gasLimit: 100000n });
             await tx.wait();
             const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
             const decimals = await contract.decimals();
-            const t2 = await contract.transfer(userWallet.public_address, ethers.parseUnits(received.toString(), decimals));
+            const t2 = await contract.transfer(userWallet.public_address, ethers.parseUnits(received.toString(), decimals), { gasLimit: 150000n });
             await t2.wait();
           } else {
             const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
             const decimals = await contract.decimals();
-            const tx = await contract.transfer(treasurySigner.address, ethers.parseUnits(amount.toString(), decimals));
+            const tx = await contract.transfer(treasurySigner.address, ethers.parseUnits(amount.toString(), decimals), { gasLimit: 150000n });
             await tx.wait();
-            const t2 = await treasurySigner.sendTransaction({ to: userWallet.public_address, value: ethers.parseEther(received.toFixed(6)) });
+            const t2 = await treasurySigner.sendTransaction({ to: userWallet.public_address, value: ethers.parseEther(received.toFixed(6)), gasLimit: 100000n });
             await t2.wait();
           }
         }
