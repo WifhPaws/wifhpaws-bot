@@ -181,27 +181,37 @@ bot.command('start', async (ctx) => {
 
   if (userId && isAdmin(userId)) {
     // Send chat message with Admin & Treasury inline buttons
+    const adminKeyboard = [
+      [
+        { text: "🏦 View Treasury", callback_data: "admin_treasury" },
+        { text: "🪂 Airdrop Token", callback_data: "admin_airdrop" }
+      ],
+      [
+        { text: "⚙️ Reset Points", callback_data: "admin_reset" },
+        { text: "🔑 Keywords", callback_data: "admin_keywords" }
+      ]
+    ];
+    
+    if (ctx.chat.type === 'private') {
+      adminKeyboard.push([
+        { text: "💳 Manage My Wallet", callback_data: "action_my_wallet" },
+        { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
+      ]);
+    } else {
+      adminKeyboard.push([{ text: "💳 Manage My Wallet", callback_data: "action_my_wallet" }]);
+    }
+
     await ctx.reply("🐾 *WifhPaws Admin & Treasury Control*", {
       parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "🏦 View Treasury", callback_data: "admin_treasury" },
-            { text: "🪂 Airdrop Token", callback_data: "admin_airdrop" }
-          ],
-          [
-            { text: "⚙️ Reset Points", callback_data: "admin_reset" },
-            { text: "🔑 Keywords", callback_data: "admin_keywords" }
-          ],
-          [
-            { text: "💳 Manage My Wallet", callback_data: "action_my_wallet" },
-            { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
-          ]
-        ]
-      }
+      reply_markup: { inline_keyboard: adminKeyboard }
     });
   } else {
-    // Standard user view — Mini App button + full chat command list
+    // Standard user view
+    const userKeyboard: any[] = [];
+    if (ctx.chat.type === 'private') {
+      userKeyboard.push([{ text: '💎 Open Wallet Dashboard', web_app: { url: WEBAPP_URL } }]);
+    }
+
     await ctx.reply(
       `🐾 *Welcome to WifhPaws Bot!*\n\n` +
       `Engage in group chats to earn hidden Paw Points and manage your Robinhood Chain EVM wallet.\n\n` +
@@ -212,11 +222,7 @@ bot.command('start', async (ctx) => {
       `💡 *Tip:* Chat naturally in groups — secret keywords earn you Paw Points!`,
       {
         parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '💎 Open Wallet Dashboard', web_app: { url: WEBAPP_URL } }]
-          ]
-        }
+        ...(userKeyboard.length > 0 ? { reply_markup: { inline_keyboard: userKeyboard } } : {})
       }
     );
   }
@@ -230,8 +236,7 @@ bot.command('wallet', async (ctx) => {
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '📩 Open Private Wallet', url: `https://t.me/${botUsername}?start=wallet` }],
-            [{ text: '🚀 Open Mini App', web_app: { url: WEBAPP_URL } }]
+            [{ text: '📩 Open Private Wallet', url: `https://t.me/${botUsername}?start=wallet` }]
           ]
         }
       }
@@ -382,8 +387,7 @@ bot.action('action_my_wallet', async (ctx) => {
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '📩 Open Private Wallet', url: `https://t.me/${botUsername}?start=wallet` }],
-            [{ text: '🚀 Open Mini App', web_app: { url: WEBAPP_URL } }]
+            [{ text: '📩 Open Private Wallet', url: `https://t.me/${botUsername}?start=wallet` }]
           ]
         }
       }
@@ -486,24 +490,29 @@ bot.command('admin', async (ctx) => {
   const senderId = ctx.from.id;
   if (!isAdmin(senderId)) return ctx.reply('⛔ Unauthorized. This command is restricted to project administrators.');
 
+  const adminKeyboard = [
+    [
+      { text: "🏦 View Treasury", callback_data: "admin_treasury" },
+      { text: "🪂 Airdrop Token", callback_data: "admin_airdrop" }
+    ],
+    [
+      { text: "⚙️ Reset Points", callback_data: "admin_reset" },
+      { text: "🔑 Keywords", callback_data: "admin_keywords" }
+    ]
+  ];
+  
+  if (ctx.chat.type === 'private') {
+    adminKeyboard.push([
+      { text: "💳 Manage My Wallet", callback_data: "action_my_wallet" },
+      { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
+    ]);
+  } else {
+    adminKeyboard.push([{ text: "💳 Manage My Wallet", callback_data: "action_my_wallet" }]);
+  }
+
   return ctx.reply("🛡️ *WifhPaws Admin Control Center*\n\nSelect an option below:", {
     parse_mode: "Markdown",
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "🏦 View Treasury", callback_data: "admin_treasury" },
-          { text: "🪂 Airdrop Token", callback_data: "admin_airdrop" }
-        ],
-        [
-          { text: "⚙️ Reset Points", callback_data: "admin_reset" },
-          { text: "🔑 Keywords", callback_data: "admin_keywords" }
-        ],
-        [
-          { text: "💳 Manage My Wallet", callback_data: "action_my_wallet" },
-          { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
-        ]
-      ]
-    }
+    reply_markup: { inline_keyboard: adminKeyboard }
   });
 });
 
@@ -622,10 +631,14 @@ bot.command('resetallpoints', async (ctx) => {
 bot.command('addkeyword', async (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
   const args = ctx.message.text.split(' ').slice(1);
-  if (args.length < 2) return ctx.reply('⚠️ Usage: `/addkeyword [word] [points]`');
-  const keyword = args[0].toLowerCase().trim();
-  const points = parseInt(args[1], 10);
-  if (isNaN(points) || points <= 0) return ctx.reply('❌ Points must be a positive number.');
+  if (args.length < 2) return ctx.reply('⚠️ Usage: `/addkeyword [word or phrase] [points]`');
+  
+  const pointsStr = args.pop() || '';
+  const points = parseInt(pointsStr, 10);
+  const keyword = args.join(' ').toLowerCase().trim();
+  
+  if (isNaN(points) || points <= 0) return ctx.reply('❌ Points must be a positive number. Example: `/addkeyword good morning 15`');
+  
   const { error } = await supabase.from('dynamic_keywords').upsert({ keyword, points_reward: points }, { onConflict: 'keyword' });
   if (error) return ctx.reply(`❌ Failed to add keyword: ${error.message}`);
   return ctx.reply(`✅ Secret keyword "${keyword}" added with a reward of ${points} Paw Points!`);
