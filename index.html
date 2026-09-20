@@ -81,6 +81,7 @@
         }
         .btn-deposit { background: linear-gradient(135deg, #7c3aed, #4f46e5); }
         .btn-send { background: linear-gradient(135deg, #059669, #10b981); }
+        .btn-swap { background: linear-gradient(135deg, #10b981, #059669); }
     </style>
 </head>
 <body>
@@ -108,13 +109,118 @@
             </div>
 
             <div class="btn-group">
-                <button class="btn btn-deposit" onclick="alert('Deposit modal opening...')">Deposit</button>
-                <button class="btn btn-send" onclick="alert('Send Gift modal opening...')">Send Gift</button>
+                <button class="btn btn-deposit" onclick="handleAction('deposit')">Deposit</button>
+                <button class="btn btn-send" onclick="handleAction('send')">Send Gift</button>
             </div>
+        </div>
+
+        <!-- Instant Token Swap Card -->
+        <div class="card" style="text-align: left;">
+            <div style="font-size: 12px; color: #10b981; font-weight: bold; margin-bottom: 12px;">🔄 INSTANT TOKEN SWAP</div>
+            
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 11px; color: #8fa89d; display: block; margin-bottom: 4px;">YOU PAY</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="number" id="swap-amount" placeholder="0.0" oninput="updateEstimate()" style="flex: 1; background: rgba(5, 25, 16, 0.8); border: 1px solid rgba(26, 110, 71, 0.5); border-radius: 8px; color: white; padding: 10px; font-size: 14px; outline: none;">
+                    <select id="swap-from" onchange="toggleSwapDirection()" style="background: rgba(5, 25, 16, 0.8); border: 1px solid rgba(26, 110, 71, 0.5); border-radius: 8px; color: #10b981; padding: 10px; font-weight: bold; outline: none;">
+                        <option value="WIFH">WIFH</option>
+                        <option value="ETH">ETH</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 11px; color: #8fa89d; display: block; margin-bottom: 4px;">YOU RECEIVE (ESTIMATED)</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="swap-receive" placeholder="0.0" readonly style="flex: 1; background: rgba(5, 25, 16, 0.5); border: 1px solid rgba(26, 110, 71, 0.2); border-radius: 8px; color: #27d97b; padding: 10px; font-size: 14px; font-weight: bold; outline: none;">
+                    <span id="swap-to-label" style="background: rgba(5, 25, 16, 0.8); border: 1px solid rgba(26, 110, 71, 0.5); border-radius: 8px; color: #27d97b; padding: 10px; font-weight: bold; min-width: 60px; text-align: center; display: flex; align-items: center; justify-content: center;">ETH</span>
+                </div>
+            </div>
+
+            <button id="btn-execute-swap" class="btn btn-swap" style="width: 100%;" onclick="handleSwap()">Swap Tokens Now</button>
         </div>
     </div>
 
     <script>
+        let currentUserId = null;
+        // Example Exchange Rate: 1 WIFH = 0.0001 ETH (1 ETH = 10,000 WIFH)
+        const RATE_WIFH_PER_ETH = 10000;
+
+        function toggleSwapDirection() {
+            const fromToken = document.getElementById('swap-from').value;
+            document.getElementById('swap-to-label').innerText = fromToken === 'WIFH' ? 'ETH' : 'WIFH';
+            updateEstimate();
+        }
+
+        function updateEstimate() {
+            const amount = parseFloat(document.getElementById('swap-amount').value) || 0;
+            const fromToken = document.getElementById('swap-from').value;
+            let receive = 0;
+            if (fromToken === 'WIFH') {
+                receive = amount / RATE_WIFH_PER_ETH;
+                document.getElementById('swap-receive').value = receive > 0 ? receive.toFixed(6) : '0.0';
+            } else {
+                receive = amount * RATE_WIFH_PER_ETH;
+                document.getElementById('swap-receive').value = receive > 0 ? receive.toLocaleString() : '0.0';
+            }
+        }
+
+        async function handleSwap() {
+            const amount = parseFloat(document.getElementById('swap-amount').value);
+            const fromToken = document.getElementById('swap-from').value;
+            const toToken = fromToken === 'WIFH' ? 'ETH' : 'WIFH';
+
+            if (!amount || amount <= 0) {
+                alert('Please enter a valid amount to swap.');
+                return;
+            }
+
+            if (!currentUserId) {
+                alert('User authentication details not available.');
+                return;
+            }
+
+            const btn = document.getElementById('btn-execute-swap');
+            btn.innerText = 'Processing Swap...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/swap', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        telegram_id: currentUserId,
+                        from: fromToken.toLowerCase(),
+                        to: toToken.toLowerCase(),
+                        amount: amount
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    alert(`✅ Swap Successful!\nSwapped ${amount} ${fromToken} for ${data.received} ${toToken}.`);
+                    window.location.reload();
+                } else {
+                    alert(`❌ Swap Failed: ${data.error || 'Transaction could not be completed.'}`);
+                }
+            } catch (err) {
+                alert(`❌ Error executing swap: ${err.message}`);
+            } finally {
+                btn.innerText = 'Swap Tokens Now';
+                btn.disabled = false;
+            }
+        }
+
+        function handleAction(type) {
+            if (window.Telegram && window.Telegram.WebApp) {
+                if (type === 'deposit') {
+                    window.Telegram.WebApp.close();
+                } else if (type === 'send') {
+                    window.Telegram.WebApp.close();
+                }
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', async () => {
             if (window.Telegram && window.Telegram.WebApp) {
                 const tg = window.Telegram.WebApp;
@@ -123,6 +229,7 @@
 
                 const user = tg.initDataUnsafe?.user;
                 if (user) {
+                    currentUserId = user.id;
                     if (user.first_name) {
                         document.getElementById('user-name').innerText = user.first_name + (user.last_name ? ' ' + user.last_name : '');
                     }

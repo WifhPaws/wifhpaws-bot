@@ -230,7 +230,7 @@ async function sendWalletDashboard(ctx: any, telegramId: number, edit: boolean =
     const keyboard: any[] = [
       [{ text: '\u{1F680} Launch Mini App Dashboard', web_app: { url: WEBAPP_URL } }],
       [{ text: '\u{1F4E5} Receive', callback_data: 'action_receive' }, { text: '\u{1F4B8} Send', callback_data: 'action_send_guide' }],
-      [{ text: '\u{1F512} Export Private Key', callback_data: 'action_export_key' }]
+      [{ text: '\u{1F504} Swap Tokens', callback_data: 'action_swap' }, { text: '\u{1F512} Export Private Key', callback_data: 'action_export_key' }]
     ];
 
     if (isAdmin(telegramId)) {
@@ -287,6 +287,18 @@ bot.action('action_send_guide', async (ctx) => {
   await ctx.answerCbQuery();
   return ctx.reply(
     `\u{1F4B8} *How to Send Funds*\n\nUse the \`/send\` command in private chat:\n\n\u2022 *To External Wallet:*\n\`/send [amount] [eth/wifh] [0xAddress]\`\n\n\u2022 *To Telegram User:*\n\`/send [amount] [eth/wifh] [@username]\``,
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
+  );
+});
+
+bot.action('action_swap', async (ctx) => {
+  await ctx.answerCbQuery();
+  return ctx.reply(
+    `\u{1F504} *Token Swap Guide*\n\n` +
+    `Swap WIFH and ETH instantly using the command:\n\n` +
+    `\u2022 *Swap WIFH for ETH:*\n\`/swap [amount] wifh eth\`\n_Example:_ \`/swap 100 wifh eth\`\n\n` +
+    `\u2022 *Swap ETH for WIFH:*\n\`/swap [amount] eth wifh\`\n_Example:_ \`/swap 0.01 eth wifh\`\n\n` +
+    `\u{1F4A1} *Tip:* You can also launch the Mini App for a visual Swap interface!`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
   );
 });
@@ -492,6 +504,84 @@ bot.command('send', async (ctx) => {
     );
   } catch (err: any) {
     return ctx.reply(`\u274C Transaction failed: ${err.message}`);
+  }
+});
+
+// Token Swap Command (/swap)
+bot.command('swap', async (ctx) => {
+  if (ctx.chat.type !== 'private') return ctx.reply('\u{1F512} Swaps can only be executed in private messages for security.');
+
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 4) {
+    return ctx.reply(
+      '\u26A0\uFE0F *Swap Syntax:* `/swap [amount] [fromToken] [toToken]`\n\n' +
+      '*Examples:*\n' +
+      '\u2022 `/swap 100 wifh eth` (Swap 100 WIFH for ETH)\n' +
+      '\u2022 `/swap 0.01 eth wifh` (Swap 0.01 ETH for WIFH)',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  const amountStr = args[1];
+  const fromToken = args[2].toLowerCase();
+  const toToken = args[3].toLowerCase();
+  const amount = parseFloat(amountStr);
+
+  if (isNaN(amount) || amount <= 0) return ctx.reply('\u274C Please enter a valid positive swap amount.');
+
+  if (!['wifh', 'eth'].includes(fromToken) || !['wifh', 'eth'].includes(toToken) || fromToken === toToken) {
+    return ctx.reply('\u274C Invalid swap pair. Supported pairs are `wifh` ↔ `eth`.');
+  }
+
+  try {
+    const RATE_WIFH_PER_ETH = 10000;
+    let received = 0;
+    let receivedStr = '';
+
+    if (fromToken === 'wifh' && toToken === 'eth') {
+      received = amount / RATE_WIFH_PER_ETH;
+      receivedStr = received.toFixed(6);
+    } else {
+      received = amount * RATE_WIFH_PER_ETH;
+      receivedStr = received.toLocaleString();
+    }
+
+    const statusMsg = await ctx.reply('\u23F3 Calculating rate & executing on-chain swap...');
+
+    const senderData = await getOrCreateWallet(ctx.from.id);
+    const privateKey = decryptPrivateKey(senderData.encrypted_private_key);
+    const signer = new ethers.Wallet(privateKey, provider);
+
+    if (treasurySigner && WIFH_CONTRACT_ADDRESS) {
+      if (fromToken === 'eth') {
+        const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amountStr) });
+        await tx.wait();
+        const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
+        const decimals = await contract.decimals();
+        const t2 = await contract.transfer(senderData.public_address, ethers.parseUnits(receivedStr, decimals));
+        await t2.wait();
+      } else {
+        const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
+        const decimals = await contract.decimals();
+        const tx = await contract.transfer(treasurySigner.address, ethers.parseUnits(amountStr, decimals));
+        await tx.wait();
+        const t2 = await treasurySigner.sendTransaction({ to: senderData.public_address, value: ethers.parseEther(receivedStr) });
+        await t2.wait();
+      }
+    }
+
+    return ctx.telegram.editMessageText(
+      ctx.chat.id,
+      statusMsg.message_id,
+      undefined,
+      `\u2705 *SWAP SUCCESSFUL!*\n\n` +
+      `\u{1F504} *Paid:* \`${amountStr} ${fromToken.toUpperCase()}\`\n` +
+      `\u{1F389} *Received:* \`${receivedStr} ${toToken.toUpperCase()}\`\n\n` +
+      `_Exchange Rate: 1 ETH = 10,000 WIFH_`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    return ctx.reply(`\u274C Swap failed: ${err.message}`);
   }
 });
 
@@ -781,6 +871,59 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ success: false, error: err.message }));
       }
     })();
+  } else if (req.url === '/api/swap' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const telegramId = Number(payload.telegram_id);
+        const fromToken = String(payload.from || '').toLowerCase();
+        const toToken = String(payload.to || '').toLowerCase();
+        const amount = Number(payload.amount);
+
+        if (!telegramId || !amount || amount <= 0 || !['wifh', 'eth'].includes(fromToken) || !['wifh', 'eth'].includes(toToken)) {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ success: false, error: 'Invalid swap payload parameters' }));
+        }
+
+        const RATE_WIFH_PER_ETH = 10000;
+        let received = 0;
+        if (fromToken === 'wifh') {
+          received = amount / RATE_WIFH_PER_ETH;
+        } else {
+          received = amount * RATE_WIFH_PER_ETH;
+        }
+
+        const userWallet = await getOrCreateWallet(telegramId);
+        const privateKey = decryptPrivateKey(userWallet.encrypted_private_key);
+        const signer = new ethers.Wallet(privateKey, provider);
+
+        if (treasurySigner && WIFH_CONTRACT_ADDRESS) {
+          if (fromToken === 'eth') {
+            const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amount.toString()) });
+            await tx.wait();
+            const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
+            const decimals = await contract.decimals();
+            const t2 = await contract.transfer(userWallet.public_address, ethers.parseUnits(received.toString(), decimals));
+            await t2.wait();
+          } else {
+            const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
+            const decimals = await contract.decimals();
+            const tx = await contract.transfer(treasurySigner.address, ethers.parseUnits(amount.toString(), decimals));
+            await tx.wait();
+            const t2 = await treasurySigner.sendTransaction({ to: userWallet.public_address, value: ethers.parseEther(received.toFixed(6)) });
+            await t2.wait();
+          }
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ success: true, received: received.toFixed(4) }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
   } else {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found');
