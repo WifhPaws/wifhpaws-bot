@@ -110,7 +110,7 @@
 
             <div class="btn-group">
                 <button class="btn btn-deposit" onclick="handleAction('deposit')">Deposit</button>
-                <button class="btn btn-send" onclick="handleAction('send')">Send Gift</button>
+                <button class="btn btn-send" onclick="handleAction('send')">Send</button>
             </div>
         </div>
 
@@ -212,11 +212,20 @@
         }
 
         function handleAction(type) {
-            if (window.Telegram && window.Telegram.WebApp) {
-                if (type === 'deposit') {
+            const botUsername = 'WifhPawsBot';
+            if (type === 'deposit') {
+                if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openTelegramLink) {
+                    window.Telegram.WebApp.openTelegramLink(`https://t.me/${botUsername}?start=wallet`);
                     window.Telegram.WebApp.close();
-                } else if (type === 'send') {
+                } else {
+                    window.location.href = `https://t.me/${botUsername}?start=wallet`;
+                }
+            } else if (type === 'send') {
+                if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openTelegramLink) {
+                    window.Telegram.WebApp.openTelegramLink(`https://t.me/${botUsername}?start=send`);
                     window.Telegram.WebApp.close();
+                } else {
+                    window.location.href = `https://t.me/${botUsername}?start=send`;
                 }
             }
         }

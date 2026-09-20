@@ -162,6 +162,13 @@ bot.command('start', async (ctx) => {
     return sendWalletDashboard(ctx, ctx.from.id);
   }
 
+  if (args === 'send' && ctx.chat.type === 'private') {
+    return ctx.reply(
+      `\u{1F4B8} *How to Send Funds*\n\nUse the \`/send\` command in private chat:\n\n\u2022 *To External Wallet:*\n\`/send [amount] [eth/wifh] [0xAddress]\`\n\n\u2022 *To Telegram User:*\n\`/send [amount] [eth/wifh] [@username]\``,
+      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
+    );
+  }
+
   // In group chats: ALWAYS show the standard welcome, never admin panel
   if (ctx.chat.type !== 'private') {
     return ctx.reply(
@@ -169,7 +176,6 @@ bot.command('start', async (ctx) => {
       `Engage in group chats to earn hidden Paw Points and manage your Robinhood Chain EVM wallet.\n\n` +
       `\u{1F4CC} *Chat Commands:*\n` +
       `\u2022 \`/wallet\` \u2014 View wallet balance & manage funds\n` +
-      `\u2022 \`/send [amount] [eth/wifh] [@user or 0x...]\` \u2014 Transfer tokens\n` +
       `\u2022 \`/leaderboard\` \u2014 Top 10 Paw Point holders\n\n` +
       `\u{1F4A1} *Tip:* Chat naturally in groups \u2014 secret keywords earn you Paw Points!`,
       { parse_mode: 'Markdown' }
