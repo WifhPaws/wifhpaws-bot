@@ -162,8 +162,22 @@ bot.command('start', async (ctx) => {
     return sendWalletDashboard(ctx, ctx.from.id);
   }
 
+  // In group chats: ALWAYS show the standard welcome, never admin panel
+  if (ctx.chat.type !== 'private') {
+    return ctx.reply(
+      `🐾 *Welcome to WifhPaws Bot!*\n\n` +
+      `Engage in group chats to earn hidden Paw Points and manage your Robinhood Chain EVM wallet.\n\n` +
+      `📌 *Chat Commands:*\n` +
+      `• \`/wallet\` — View wallet balance & manage funds\n` +
+      `• \`/send [amount] [eth/wifh] [@user or 0x...]\` — Transfer tokens\n` +
+      `• \`/leaderboard\` — Top 10 Paw Point holders\n\n` +
+      `💡 *Tip:* Chat naturally in groups — secret keywords earn you Paw Points!`,
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  // Private chat: show admin panel for admins, wallet dashboard for regular users
   if (userId && isAdmin(userId)) {
-    // Send chat message with Admin & Treasury inline buttons
     const adminKeyboard: any[] = [
       [
         { text: "🏦 View Treasury", callback_data: "admin_treasury" },
@@ -172,46 +186,23 @@ bot.command('start', async (ctx) => {
       [
         { text: "⚙️ Reset Points", callback_data: "admin_reset" },
         { text: "🔑 Keywords", callback_data: "admin_keywords" }
+      ],
+      [
+        { text: "💳 My Wallet", callback_data: "action_my_wallet" },
+        { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
       ]
     ];
-    
-    if (ctx.chat.type === 'private') {
-      adminKeyboard.push([
-        { text: "💳 Manage My Wallet", callback_data: "action_my_wallet" },
-        { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
-      ]);
-    } else {
-      adminKeyboard.push([{ text: "💳 Manage My Wallet", callback_data: "action_my_wallet" }]);
-    }
-
-    await ctx.reply("🐾 *WifhPaws Admin & Treasury Control*", {
+    return ctx.reply("🐾 *WifhPaws Admin & Treasury Control*", {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: adminKeyboard }
     });
   } else {
-    // Standard user view
-    const userKeyboard: any[] = [];
-    if (ctx.chat.type === 'private') {
-      userKeyboard.push([{ text: '💎 Open Wallet Dashboard', web_app: { url: WEBAPP_URL } }]);
-    }
-
-    await ctx.reply(
-      `🐾 *Welcome to WifhPaws Bot!*\n\n` +
-      `Engage in group chats to earn hidden Paw Points and manage your Robinhood Chain EVM wallet.\n\n` +
-      `📌 *Chat Commands:*\n` +
-      `• \`/wallet\` — View wallet balance & manage funds\n` +
-      `• \`/send [amount] [eth/wifh] [@user or 0x...]\` — Transfer tokens\n` +
-      `• \`/leaderboard\` — Top 10 Paw Point holders\n\n` +
-      `💡 *Tip:* Chat naturally in groups — secret keywords earn you Paw Points!`,
-      {
-        parse_mode: 'Markdown',
-        ...(userKeyboard.length > 0 ? { reply_markup: { inline_keyboard: userKeyboard } } : {})
-      }
-    );
+    // Regular user private chat: show wallet dashboard
+    return sendWalletDashboard(ctx, userId!);
   }
 });
 
-async function sendWalletDashboard(ctx: Context, telegramId: number) {
+async function sendWalletDashboard(ctx: any, telegramId: number, edit: boolean = false) {
   try {
     const wallet = await getOrCreateWallet(telegramId);
     let ethBalance = '0.0000';
@@ -246,10 +237,17 @@ async function sendWalletDashboard(ctx: Context, telegramId: number) {
       keyboard.push([{ text: '🛡️ Open Admin Panel', callback_data: 'action_open_admin' }]);
     }
 
-    return ctx.replyWithMarkdownV2(
-      messageText.replace(/([-_ *\[\]().~`>#+=|{}.!])/g, '\\$1'),
-      { reply_markup: { inline_keyboard: keyboard } }
-    );
+    if (edit) {
+      return ctx.editMessageText(
+        messageText.replace(/([-_ *\[\]().~`>#+=|{}.!])/g, '\\$1'),
+        { parse_mode: 'MarkdownV2', reply_markup: { inline_keyboard: keyboard } }
+      );
+    } else {
+      return ctx.replyWithMarkdownV2(
+        messageText.replace(/([-_ *\[\]().~`>#+=|{}.!])/g, '\\$1'),
+        { reply_markup: { inline_keyboard: keyboard } }
+      );
+    }
   } catch (err: any) {
     return ctx.reply(`❌ Error accessing wallet: ${err.message}`);
   }
@@ -273,15 +271,24 @@ bot.command('wallet', async (ctx) => {
 });
 
 // Callback Actions
+const BACK_TO_WALLET = [[{ text: '⬅️ Back to Wallet', callback_data: 'action_my_wallet' }]];
+const BACK_TO_ADMIN = [[{ text: '⬅️ Back to Admin Panel', callback_data: 'action_open_admin' }]];
+
 bot.action('action_receive', async (ctx) => {
   await ctx.answerCbQuery();
   const wallet = await getOrCreateWallet(ctx.from.id);
-  return ctx.reply(`📥 *Deposit Funds*\n\nSend ETH or WIFH on *Robinhood Chain* to your address below:\n\n\`${wallet.public_address}\``, { parse_mode: 'Markdown' });
+  return ctx.reply(
+    `📥 *Deposit Funds*\n\nSend ETH or WIFH on *Robinhood Chain* to your address below:\n\n\`${wallet.public_address}\``,
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
+  );
 });
 
 bot.action('action_send_guide', async (ctx) => {
   await ctx.answerCbQuery();
-  return ctx.reply(`💸 *How to Send Funds*\n\nUse the \`/send\` command in private chat:\n\n• *To External Wallet:*\n\`/send [amount] [eth/wifh] [0xAddress]\`\n\n• *To Telegram User:*\n\`/send [amount] [eth/wifh] [@username]\``, { parse_mode: 'Markdown' });
+  return ctx.reply(
+    `💸 *How to Send Funds*\n\nUse the \`/send\` command in private chat:\n\n• *To External Wallet:*\n\`/send [amount] [eth/wifh] [0xAddress]\`\n\n• *To Telegram User:*\n\`/send [amount] [eth/wifh] [@username]\``,
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
+  );
 });
 
 bot.action('action_export_key', async (ctx) => {
@@ -294,7 +301,10 @@ bot.action('action_export_key', async (ctx) => {
       .single();
     if (!wallet) return ctx.reply('❌ No wallet found.');
     const privateKey = decryptPrivateKey(wallet.encrypted_private_key);
-    return ctx.reply(`⚠️ *CONFIDENTIAL PRIVATE KEY*\n\nDo not share this key with anyone!\n\n🔑 \`${privateKey}\``, { parse_mode: 'Markdown' });
+    return ctx.reply(
+      `⚠️ *CONFIDENTIAL PRIVATE KEY*\n\nDo not share this key with anyone!\n\n🔑 \`${privateKey}\``,
+      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
+    );
   } catch (err: any) {
     return ctx.reply(`❌ Error decrypting key: ${err.message}`);
   }
@@ -329,8 +339,8 @@ bot.action('admin_treasury', async (ctx) => {
       `💰 *Central Reserves (Robinhood Chain):*\n` +
       `• *ETH (Gas):* \`${parseFloat(ethBalance).toFixed(4)} ETH\`\n` +
       `• *WIFH Pool:* \`${wifhBalance}\` WIFH\n\n` +
-      `🎁 Quick airdrop: \`/airdrop [@username or 0xAddress] [amount]\``,
-      { parse_mode: 'Markdown' }
+      `🎁 Airdrop: \`/airdrop [@username or 0xAddress] [amount]\``,
+      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_ADMIN } }
     );
   } catch (err: any) {
     return ctx.reply(`❌ Error: ${err.message}`);
@@ -344,8 +354,9 @@ bot.action('admin_airdrop', async (ctx) => {
   return ctx.reply(
     `🪂 *Token Airdrop Command:*\n\n` +
     `\`/airdrop [@username or 0xAddress] [amount]\`\n\n` +
-    `_Example:_ \`/airdrop @username 500\``,
-    { parse_mode: 'Markdown' }
+    `_Example:_ \`/airdrop @username 500\`\n\n` +
+    `_Tip: "amount" is in whole WIFH tokens (e.g. 500 = 500 WIFH)_`,
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_ADMIN } }
   );
 });
 
@@ -357,7 +368,7 @@ bot.action('admin_reset', async (ctx) => {
     `⚙️ *Points Reset Options:*\n\n` +
     `• \`/resetpoints @username\` — Reset single user points\n` +
     `• \`/resetallpoints\` — Reset all points on leaderboard`,
-    { parse_mode: 'Markdown' }
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_ADMIN } }
   );
 });
 
@@ -367,10 +378,10 @@ bot.action('admin_keywords', async (ctx) => {
   if (!senderId || !isAdmin(senderId)) return ctx.reply('⛔ Unauthorized.');
   return ctx.reply(
     `🔑 *Secret Keyword Controls:*\n\n` +
-    `• \`/addkeyword [word] [points]\` — Create a hidden chat trigger\n` +
+    `• \`/addkeyword [word or phrase] [points]\` — Create a hidden chat trigger\n` +
     `• \`/removekeyword [word]\` — Delete an existing keyword\n` +
     `• \`/keywords\` — View all active hidden keywords`,
-    { parse_mode: 'Markdown' }
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_ADMIN } }
   );
 });
 
@@ -405,17 +416,12 @@ bot.action('action_open_admin', async (ctx) => {
     [
       { text: "⚙️ Reset Points", callback_data: "admin_reset" },
       { text: "🔑 Keywords", callback_data: "admin_keywords" }
+    ],
+    [
+      { text: "💳 My Wallet", callback_data: "action_my_wallet" },
+      { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
     ]
   ];
-  
-  if (ctx.chat?.type === 'private') {
-    adminKeyboard.push([
-      { text: "💳 Manage My Wallet", callback_data: "action_my_wallet" },
-      { text: "🚀 Open Mini App", web_app: { url: WEBAPP_URL } }
-    ]);
-  } else {
-    adminKeyboard.push([{ text: "💳 Manage My Wallet", callback_data: "action_my_wallet" }]);
-  }
 
   return ctx.reply("🛡️ *WifhPaws Admin Control Center*\n\nSelect an option below:", {
     parse_mode: "Markdown",
@@ -678,6 +684,9 @@ bot.command('keywords', async (ctx) => {
 bot.on('message', async (ctx, next) => {
   const message = ctx.message as any;
   if (!message || !message.text || message.text.startsWith('/') || ctx.from?.is_bot) return next();
+  // Only award in group chats (not in private DMs with the bot)
+  if (ctx.chat.type === 'private') return next();
+
   const userId = ctx.from.id;
   const username = ctx.from.username || null;
   const text = message.text.toLowerCase();
@@ -694,7 +703,11 @@ bot.on('message', async (ctx, next) => {
   }
   const currentPoints = user?.paw_points || 0;
   const newBalance = currentPoints + matchedKeyword.points_reward;
-  await supabase.from('users').upsert({ telegram_id: userId, username, paw_points: newBalance, last_awarded_at: now.toISOString() }, { onConflict: 'telegram_id' });
+  // Write to both paw_points and points so the leaderboard always reflects the live total
+  await supabase.from('users').upsert(
+    { telegram_id: userId, username, paw_points: newBalance, points: newBalance, last_awarded_at: now.toISOString() },
+    { onConflict: 'telegram_id' }
+  );
   await ctx.reply(`🐾 +${matchedKeyword.points_reward} Paw Points awarded to ${username ? '@' + username : 'you'}! Total: ${newBalance}`);
   return next();
 });
