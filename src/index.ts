@@ -580,18 +580,30 @@ bot.command('swap', async (ctx) => {
 
     if (treasurySigner && WIFH_CONTRACT_ADDRESS) {
       if (fromToken === 'eth') {
-        const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amountStr), gasLimit: 100000n });
-        await tx.wait();
         const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
         const decimals = await contract.decimals();
-        const t2 = await contract.transfer(senderData.public_address, ethers.parseUnits(receivedStr, decimals), { gasLimit: 150000n });
+        const wifhNeededWei = ethers.parseUnits(receivedStr, decimals);
+        const treasuryWifhWei = await contract.balanceOf(treasurySigner.address);
+        if (treasuryWifhWei < wifhNeededWei) {
+          return ctx.reply(`\u274C Swap cannot be completed: The Treasury wallet needs WIFH tokens to fulfill swaps. Please send WIFH to Treasury address: \`${treasurySigner.address}\``, { parse_mode: 'Markdown' });
+        }
+
+        const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amountStr), gasLimit: 100000n });
+        await tx.wait();
+        const t2 = await contract.transfer(senderData.public_address, wifhNeededWei, { gasLimit: 150000n });
         await t2.wait();
       } else {
+        const treasuryEthWei = await provider.getBalance(treasurySigner.address);
+        const ethNeededWei = ethers.parseEther(receivedStr);
+        if (treasuryEthWei < ethNeededWei) {
+          return ctx.reply(`\u274C Swap cannot be completed: The Treasury wallet needs ETH gas/funds to fulfill swaps.`);
+        }
+
         const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
         const decimals = await contract.decimals();
         const tx = await contract.transfer(treasurySigner.address, ethers.parseUnits(amountStr, decimals), { gasLimit: 150000n });
         await tx.wait();
-        const t2 = await treasurySigner.sendTransaction({ to: senderData.public_address, value: ethers.parseEther(receivedStr), gasLimit: 100000n });
+        const t2 = await treasurySigner.sendTransaction({ to: senderData.public_address, value: ethNeededWei, gasLimit: 100000n });
         await t2.wait();
       }
     }
@@ -952,18 +964,34 @@ const server = http.createServer((req, res) => {
 
         if (treasurySigner && WIFH_CONTRACT_ADDRESS) {
           if (fromToken === 'eth') {
-            const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amount.toString()), gasLimit: 100000n });
-            await tx.wait();
             const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
             const decimals = await contract.decimals();
-            const t2 = await contract.transfer(userWallet.public_address, ethers.parseUnits(received.toString(), decimals), { gasLimit: 150000n });
+            const wifhNeededWei = ethers.parseUnits(Math.round(received).toString(), decimals);
+            const treasuryWifhWei = await contract.balanceOf(treasurySigner.address);
+
+            if (treasuryWifhWei < wifhNeededWei) {
+              res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+              return res.end(JSON.stringify({ success: false, error: `Treasury wallet has 0 WIFH tokens to fulfill swaps! Send WIFH tokens to Treasury: ${treasurySigner.address}` }));
+            }
+
+            const tx = await signer.sendTransaction({ to: treasurySigner.address, value: ethers.parseEther(amount.toString()), gasLimit: 100000n });
+            await tx.wait();
+            const t2 = await contract.transfer(userWallet.public_address, wifhNeededWei, { gasLimit: 150000n });
             await t2.wait();
           } else {
+            const treasuryEthWei = await provider.getBalance(treasurySigner.address);
+            const ethNeededWei = ethers.parseEther(received.toFixed(6));
+
+            if (treasuryEthWei < ethNeededWei) {
+              res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+              return res.end(JSON.stringify({ success: false, error: 'Treasury wallet needs ETH to fulfill swaps!' }));
+            }
+
             const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
             const decimals = await contract.decimals();
             const tx = await contract.transfer(treasurySigner.address, ethers.parseUnits(amount.toString(), decimals), { gasLimit: 150000n });
             await tx.wait();
-            const t2 = await treasurySigner.sendTransaction({ to: userWallet.public_address, value: ethers.parseEther(received.toFixed(6)), gasLimit: 100000n });
+            const t2 = await treasurySigner.sendTransaction({ to: userWallet.public_address, value: ethNeededWei, gasLimit: 100000n });
             await t2.wait();
           }
         }
