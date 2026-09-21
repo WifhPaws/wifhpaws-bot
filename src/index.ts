@@ -306,6 +306,12 @@ function isAdmin(userId: number): boolean {
   return ADMIN_USER_IDS.includes(idStr) || (adminSingle === idStr) || dynamicAdmins.has(idStr);
 }
 
+function isSuperAdmin(userId: number): boolean {
+  const adminSingle = process.env.ADMIN_TELEGRAM_ID?.trim();
+  const idStr = userId.toString();
+  return ADMIN_USER_IDS.includes(idStr) || (adminSingle === idStr);
+}
+
 async function getTargetUser(ctx: Context): Promise<{ id: number; username?: string } | null> {
   const message = ctx.message as any;
   if (!message || !message.text) return null;
@@ -830,8 +836,8 @@ bot.command('adminhelp', async (ctx) => {
 bot.command('makeadmin', async (ctx) => {
     const senderId = ctx.from?.id;
 
-    if (!senderId || !isAdmin(senderId)) {
-        return ctx.reply("\u274C You are not authorized to use this command.");
+    if (!senderId || !isSuperAdmin(senderId)) {
+        return ctx.reply("\u274C You are not authorized to use this command. Only the core project admin can promote users.");
     }
 
     const messageText = ctx.message?.text || '';
