@@ -363,8 +363,7 @@ bot.command('start', async (ctx) => {
         { text: "\u{1F511} Keywords", callback_data: "admin_keywords" }
       ],
       [
-        { text: "\u{1F4B3} My Wallet", callback_data: "action_my_wallet" },
-        { text: "\u{1F680} Open Mini App", web_app: { url: WEBAPP_URL } }
+        { text: "\u{1F4B3} My Personal Wallet", callback_data: "action_my_wallet" }
       ]
     ];
     return ctx.reply("\u{1F43E} *WifhPaws Admin & Treasury Control*", {
@@ -520,18 +519,41 @@ bot.action('admin_treasury', async (ctx) => {
       }
     }
 
+    const ethPrice = await getEthPriceUsd();
+    const wifhPrice = await getWifhPriceUsd();
+    const ethUsd = (parseFloat(ethBalance) * ethPrice).toFixed(2);
+    const wifhUsd = (parseFloat(wifhBalance) * wifhPrice).toFixed(2);
+
+    const treasuryKeyboard = [
+      [{ text: '\u{1F4E5} Deposit to Treasury', callback_data: 'admin_treasury_deposit' }],
+      [
+        { text: '\u{1FA82} Airdrop', callback_data: 'admin_airdrop' },
+        { text: '\u{1F504} Refresh', callback_data: 'admin_treasury' }
+      ],
+      [{ text: '\u2B05\uFE0F Back to Admin Panel', callback_data: 'action_open_admin' }]
+    ];
+
     return ctx.reply(
-      `\u{1F3E6} *Project Treasury Status*\n\n` +
+      `\u{1F3E6} *Project Treasury Wallet*\n\n` +
       `\u{1F4CD} *Address:*\n\`${treasuryAddress}\`\n\n` +
-      `\u{1F4B0} *Central Reserves (Robinhood Chain):*\n` +
-      `\u2022 *ETH (Gas):* \`${parseFloat(ethBalance).toFixed(4)} ETH\`\n` +
-      `\u2022 *WIFH Pool:* \`${wifhBalance}\` WIFH\n\n` +
-      `\u{1F381} Airdrop: \`/airdrop [@username or 0xAddress] [amount]\``,
-      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_ADMIN } }
+      `\u{1F4B0} *Balances (Robinhood Chain):*\n` +
+      `\u2022 *ETH (Gas):* \`${parseFloat(ethBalance).toFixed(4)} ETH\` (~\$${ethUsd})\n` +
+      `\u2022 *WIFH Token:* \`${parseFloat(wifhBalance).toFixed(2)} WIFH\` (~\$${wifhUsd})\n\n` +
+      `\u{1F381} Airdrop: \`/airdrop [@user] [amount]\``,
+      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: treasuryKeyboard } }
     );
   } catch (err: any) {
     return ctx.reply(`\u274C Error: ${err.message}`);
   }
+});
+
+bot.action('admin_treasury_deposit', async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!treasurySigner) return ctx.reply('\u274C Treasury not configured.');
+  return ctx.reply(
+    `\u{1F4E5} *Fund the Treasury*\n\nSend ETH or WIFH on *Robinhood Chain* to:\n\n\`${treasurySigner.address}\`\n\n_Copy the address above and send tokens from any wallet._`,
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '\u2B05\uFE0F Back to Treasury', callback_data: 'admin_treasury' }]] } }
+  );
 });
 
 bot.action('admin_airdrop', async (ctx) => {
@@ -605,8 +627,7 @@ bot.action('action_open_admin', async (ctx) => {
       { text: "\u{1F511} Keywords", callback_data: "admin_keywords" }
     ],
     [
-      { text: "\u{1F4B3} My Wallet", callback_data: "action_my_wallet" },
-      { text: "\u{1F680} Open Mini App", web_app: { url: WEBAPP_URL } }
+      { text: "\u{1F4B3} My Personal Wallet", callback_data: "action_my_wallet" }
     ]
   ];
 
@@ -756,11 +777,10 @@ bot.command('admin', async (ctx) => {
   
   if (ctx.chat.type === 'private') {
     adminKeyboard.push([
-      { text: "\u{1F4B3} Manage My Wallet", callback_data: "action_my_wallet" },
-      { text: "\u{1F680} Open Mini App", web_app: { url: WEBAPP_URL } }
+      { text: "\u{1F4B3} My Personal Wallet", callback_data: "action_my_wallet" }
     ]);
   } else {
-    adminKeyboard.push([{ text: "\u{1F4B3} Manage My Wallet", callback_data: "action_my_wallet" }]);
+    adminKeyboard.push([{ text: "\u{1F4B3} My Personal Wallet", callback_data: "action_my_wallet" }]);
   }
 
   return ctx.reply("\u{1F6E1}\uFE0F *WifhPaws Admin Control Center*\n\nSelect an option below:", {
