@@ -286,9 +286,24 @@ async function getOrCreateWallet(telegramId: number): Promise<{ public_address: 
   return createdWallet;
 }
 
+let dynamicAdmins = new Set<string>();
+
+async function loadDynamicAdmins() {
+  try {
+    const { data, error } = await supabase.from('admins').select('telegram_id');
+    if (!error && data) {
+      data.forEach((row: any) => dynamicAdmins.add(row.telegram_id.toString()));
+    }
+  } catch (err) {
+    console.warn('Could not load dynamic admins. (Table might not exist yet).');
+  }
+}
+loadDynamicAdmins();
+
 function isAdmin(userId: number): boolean {
   const adminSingle = process.env.ADMIN_TELEGRAM_ID?.trim();
-  return ADMIN_USER_IDS.includes(userId.toString()) || (adminSingle ? userId.toString() === adminSingle : false);
+  const idStr = userId.toString();
+  return ADMIN_USER_IDS.includes(idStr) || (adminSingle === idStr) || dynamicAdmins.has(idStr);
 }
 
 async function getTargetUser(ctx: Context): Promise<{ id: number; username?: string } | null> {
@@ -759,6 +774,44 @@ bot.command('swap', async (ctx) => {
 // ==========================================
 // ADMIN HELP & TREASURY COMMANDS
 // ==========================================
+
+bot.command('makeadmin', async (ctx) => {
+    const senderId = ctx.from?.id;
+
+    if (!senderId || !isAdmin(senderId)) {
+        return ctx.reply("\u274C You are not authorized to use this command.");
+    }
+
+    const messageText = ctx.message?.text || '';
+    const targetUsername = messageText.split(' ')[1]?.replace('@', '');
+
+    if (!targetUsername) {
+        return ctx.reply("\u26A0\uFE0F Please provide a username. Example: /makeadmin @username");
+    }
+
+    const { data: userData, error } = await supabase
+        .from('users')
+        .select('telegram_id')
+        .ilike('username', targetUsername)
+        .single();
+
+    if (error || !userData) {
+        return ctx.reply(`\u274C Could not find a user with the handle @${targetUsername}. Make sure they have started the bot (/start) at least once!`);
+    }
+
+    const { error: adminError } = await supabase
+        .from('admins')
+        .upsert({ telegram_id: userData.telegram_id, username: targetUsername });
+
+    if (adminError) {
+        return ctx.reply(`\u274C Failed to grant admin privileges in the database. (Make sure the 'admins' table exists). Details: ${adminError.message}`);
+    }
+    
+    // Add to memory immediately so it works without restarting
+    dynamicAdmins.add(userData.telegram_id.toString());
+
+    await ctx.reply(`\u2705 Success! @${targetUsername} has been granted admin privileges.`);
+});
 
 bot.command('admin', async (ctx) => {
   const senderId = ctx.from.id;
