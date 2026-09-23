@@ -630,16 +630,21 @@ bot.action('admin_keywords', async (ctx) => {
   const senderId = ctx.from?.id;
   if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
   const keywordsKeyboard = [
-    [{ text: "\u{1F4DC} List Active Keywords", callback_data: "action_list_keywords" }],
+    [{ text: "\u{1F4DC} List Paw-Point Keywords", callback_data: "action_list_keywords" }],
+    [{ text: "\u{1F4AC} List Chat Triggers", callback_data: "action_list_triggers" }],
     [{ text: "\u2B05\uFE0F Back to Admin Panel", callback_data: "action_open_admin" }]
   ];
 
   return ctx.reply(
-    `\u{1F511} *Secret Keyword Controls:*\n\n` +
-    `\u2022 \`/addkeyword [word or phrase] [points]\` \u2014 Create a hidden chat trigger\n` +
-    `\u2022 \`/removekeyword [word]\` \u2014 Delete an existing keyword\n` +
-    `\u2022 \`/clearallkeywords\` \u2014 Delete all keywords at once\n` +
-    `\u2022 \`/keywords\` \u2014 View all active hidden keywords`,
+    `\u{1F511} *Keywords & Triggers:*\n\n` +
+    `*Paw-Point Keywords* (reward points):\n` +
+    `\u2022 \`/addkeyword [phrase] [points]\` \u2014 Add a rewarded keyword\n` +
+    `\u2022 \`/removekeyword [word]\` \u2014 Remove a keyword\n` +
+    `\u2022 \`/clearallkeywords\` \u2014 Delete all keywords\n\n` +
+    `*Chat Triggers* (auto-reply responses):\n` +
+    `\u2022 \`/addtrigger keyword | response\` \u2014 Add an auto-reply\n` +
+    `\u2022 \`/removetrigger keyword\` \u2014 Remove a trigger\n` +
+    `\u2022 \`/cleartriggers\` \u2014 Clear all triggers`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keywordsKeyboard } }
   );
 });
@@ -660,6 +665,22 @@ bot.action('action_list_keywords', async (ctx) => {
     reply_markup: { inline_keyboard: [[{ text: "\u2B05\uFE0F Back", callback_data: "admin_keywords" }]] }
   });
 });
+
+bot.action('action_list_triggers', async (ctx) => {
+  await ctx.answerCbQuery();
+  const senderId = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+
+  const { data: triggers } = await supabase.from('chat_triggers').select('keyword, response');
+  if (!triggers || triggers.length === 0) return ctx.reply('\u2139\uFE0F No custom chat triggers set.');
+  let text = '\u{1F4AC} *Active Chat Triggers:*\n\n';
+  triggers.forEach((t, i) => { text += `${i + 1}. \`${t.keyword}\` \u2192 _${t.response}_\n`; });
+  return ctx.reply(text, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: [[{ text: '\u2B05\uFE0F Back', callback_data: 'admin_keywords' }]] }
+  });
+});
+
 
 bot.action('action_my_wallet', async (ctx) => {
   await ctx.answerCbQuery();
@@ -1163,20 +1184,87 @@ bot.command('keywords', async (ctx) => {
   return ctx.replyWithMarkdownV2(text.replace(/([-_ *\[\]().~`>#+=|{}.!])/g, '\\$1'));
 });
 
-// Chat Message Listener for Keyword Rewards
+bot.command('addtrigger', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  const full = ctx.message.text.replace('/addtrigger', '').trim();
+  const separator = full.indexOf('|');
+  if (separator === -1) return ctx.reply('\u26A0\uFE0F Usage: `/addtrigger keyword | Bot response here`', { parse_mode: 'Markdown' });
+  const keyword = full.slice(0, separator).trim().toLowerCase();
+  const response = full.slice(separator + 1).trim();
+  if (!keyword || !response) return ctx.reply('\u274C Both keyword and response are required.');
+  const { error } = await supabase.from('chat_triggers').upsert({ keyword, response }, { onConflict: 'keyword' });
+  if (error) return ctx.reply(`\u274C Failed: ${error.message}`);
+  return ctx.reply(`\u2705 Trigger added!\n\n*When someone says:* \`${keyword}\`\n*Bot replies:* ${response}`, { parse_mode: 'Markdown' });
+});
+
+bot.command('removetrigger', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  const keyword = ctx.message.text.replace('/removetrigger', '').trim().toLowerCase();
+  if (!keyword) return ctx.reply('\u26A0\uFE0F Usage: `/removetrigger keyword`', { parse_mode: 'Markdown' });
+  const { error } = await supabase.from('chat_triggers').delete().eq('keyword', keyword);
+  if (error) return ctx.reply(`\u274C Failed: ${error.message}`);
+  return ctx.reply(`\u{1F5D1}\uFE0F Trigger for \`${keyword}\` removed.`, { parse_mode: 'Markdown' });
+});
+
+bot.command('listtriggers', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  const { data: triggers } = await supabase.from('chat_triggers').select('keyword, response');
+  if (!triggers || triggers.length === 0) return ctx.reply('\u2139\uFE0F No custom chat triggers set.');
+  let text = '\u{1F4AC} *Active Chat Triggers:*\n\n';
+  triggers.forEach((t, i) => { text += `${i + 1}. \`${t.keyword}\` \u2192 _${t.response}_\n`; });
+  return ctx.reply(text, { parse_mode: 'Markdown' });
+});
+
+bot.command('cleartriggers', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  const { error } = await supabase.from('chat_triggers').delete().neq('keyword', '');
+  if (error) return ctx.reply(`\u274C Failed: ${error.message}`);
+  return ctx.reply('\u{1F5D1}\uFE0F All custom chat triggers cleared.');
+});
+
+// ==========================================
+// CHAT TRIGGERS (Auto-replies)
+// ==========================================
+const HARDCODED_TRIGGERS: Record<string, string> = {
+  'wen lambo': '🐾 Patience, paw-some friend! Focus on the mission, not the lambo!',
+  'roadmap': '📌 Check our pinned messages for the full WifhPaws ecosystem roadmap!',
+  'wen moon': '🌕 We\'re already on the launchpad — stay tuned!',
+  'rug': '🛡️ WifhPaws is community-driven and transparent. No rugs here!',
+};
+
+// Chat Message Listener — checks triggers then awards paw points
 bot.on('message', async (ctx, next) => {
   const message = ctx.message as any;
   if (!message || !message.text || message.text.startsWith('/') || ctx.from?.is_bot) return next();
-  // Only award in group chats (not in private DMs with the bot)
   if (ctx.chat.type === 'private') return next();
 
+  const text = message.text.toLowerCase();
+
+  // 1. Check hardcoded triggers
+  for (const [keyword, response] of Object.entries(HARDCODED_TRIGGERS)) {
+    if (text.includes(keyword)) {
+      return ctx.reply(response);
+    }
+  }
+
+  // 2. Check dynamic DB triggers (chat_triggers table — auto-reply responses)
+  const { data: dbTriggers } = await supabase.from('chat_triggers').select('keyword, response');
+  if (dbTriggers) {
+    for (const trigger of dbTriggers) {
+      if (text.includes(trigger.keyword.toLowerCase())) {
+        return ctx.reply(trigger.response);
+      }
+    }
+  }
+
+  // 3. Check paw-point rewarded keywords (dynamic_keywords table)
   const userId = ctx.from.id;
   const username = ctx.from.username || null;
-  const text = message.text.toLowerCase();
   const { data: keywords } = await supabase.from('dynamic_keywords').select('*');
   if (!keywords || keywords.length === 0) return next();
   const matchedKeyword = keywords.find((k) => text.includes(k.keyword.toLowerCase()));
   if (!matchedKeyword) return next();
+
   const { data: user } = await supabase.from('users').select('points, last_awarded_at').eq('telegram_id', userId).single();
   const now = new Date();
   if (user?.last_awarded_at) {
@@ -1190,7 +1278,7 @@ bot.on('message', async (ctx, next) => {
     { telegram_id: userId, username, points: newBalance, last_awarded_at: now.toISOString() },
     { onConflict: 'telegram_id' }
   );
-  await ctx.reply(`\u{1F43E} +${matchedKeyword.points_reward} Paw Points awarded to ${username ? '@' + username : 'you'}! Total: ${newBalance}`);
+  await ctx.reply(`🐾 +${matchedKeyword.points_reward} Paw Points awarded to ${username ? '@' + username : 'you'}! Total: ${newBalance}`);
   return next();
 });
 
