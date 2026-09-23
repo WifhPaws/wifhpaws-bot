@@ -63,28 +63,46 @@ if (TREASURY_PRIVATE_KEY) {
 // ==========================================
 // CRYPTO ENCRYPTION HELPERS (AES-256-GCM)
 // ==========================================
-function encryptPrivateKey(privateKey: string): string {
-  const iv = crypto.randomBytes(12);
-  const key = crypto.scryptSync(WALLET_ENCRYPTION_KEY!, 'salt', 32);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+const MASTER_KEY_HEX = process.env.ENCRYPTION_MASTER_KEY || process.env.WALLET_ENCRYPTION_KEY || '';
+const MASTER_KEY = Buffer.from(MASTER_KEY_HEX, 'hex');
 
+export function encryptPrivateKey(privateKey: string) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', MASTER_KEY, iv);
+  
   let encrypted = cipher.update(privateKey, 'utf8', 'hex');
   encrypted += cipher.final('hex');
   const authTag = cipher.getAuthTag().toString('hex');
 
-  return `${iv.toString('hex')}:${authTag}:${encrypted}`;
+  return {
+    encryptedData: encrypted,
+    iv: iv.toString('hex'),
+    authTag: authTag
+  };
 }
 
-function decryptPrivateKey(encryptedData: string): string {
-  const [ivHex, authTagHex, encryptedText] = encryptedData.split(':');
-  const iv = Buffer.from(ivHex, 'hex');
-  const authTag = Buffer.from(authTagHex, 'hex');
-  const key = crypto.scryptSync(WALLET_ENCRYPTION_KEY!, 'salt', 32);
+export function decryptPrivateKey(walletRow: any): string {
+  // Legacy decryption fallback
+  if (walletRow.encrypted_private_key && walletRow.encrypted_private_key.includes(':')) {
+    const [ivHex, authTagHex, encryptedText] = walletRow.encrypted_private_key.split(':');
+    const iv = Buffer.from(ivHex, 'hex');
+    const authTag = Buffer.from(authTagHex, 'hex');
+    const key = crypto.scryptSync(process.env.WALLET_ENCRYPTION_KEY!, 'salt', 32);
 
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+    let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  }
+
+  // New decryption
+  const iv = Buffer.from(walletRow.encryption_iv, 'hex');
+  const authTag = Buffer.from(walletRow.encryption_auth_tag, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', MASTER_KEY, iv);
   decipher.setAuthTag(authTag);
 
-  let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+  let decrypted = decipher.update(walletRow.encrypted_private_key, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
   return decrypted;
 }
@@ -151,7 +169,7 @@ async function executeOnChainSwap(
     throw new Error('DEX router or WIFH contract address is not configured.');
   }
 
-  const privateKey = decryptPrivateKey(userWallet.encrypted_private_key);
+  const privateKey = decryptPrivateKey(userWallet);
   const signer = new ethers.Wallet(privateKey, provider);
   const routerContract = new ethers.Contract(DEX_ROUTER_ADDRESS, UNISWAP_V3_ROUTER_ABI, signer);
   const ethPrice = await getEthPriceUsd();
@@ -251,26 +269,28 @@ async function executeOnChainSwap(
 // ==========================================
 // WALLET MANAGEMENT & HELPER FUNCTIONS
 // ==========================================
-async function getOrCreateWallet(telegramId: number): Promise<{ public_address: string; encrypted_private_key: string }> {
+async function getOrCreateWallet(telegramId: number): Promise<any> {
   const { data: existingWallet } = await supabase
     .from('user_wallets')
-    .select('public_address, encrypted_private_key')
+    .select('public_address, encrypted_private_key, encryption_iv, encryption_auth_tag')
     .eq('telegram_id', telegramId)
     .single();
 
   if (existingWallet) return existingWallet;
 
   const newWallet = ethers.Wallet.createRandom();
-  const encryptedKey = encryptPrivateKey(newWallet.privateKey);
+  const { encryptedData, iv, authTag } = encryptPrivateKey(newWallet.privateKey);
 
   const { data: createdWallet, error } = await supabase
     .from('user_wallets')
     .insert({
       telegram_id: telegramId,
       public_address: newWallet.address,
-      encrypted_private_key: encryptedKey,
+      encrypted_private_key: encryptedData,
+      encryption_iv: iv,
+      encryption_auth_tag: authTag
     })
-    .select('public_address, encrypted_private_key')
+    .select('public_address, encrypted_private_key, encryption_iv, encryption_auth_tag')
     .single();
 
   if (error || !createdWallet) {
@@ -508,7 +528,7 @@ bot.action('action_export_key', async (ctx) => {
       .eq('telegram_id', ctx.from.id)
       .single();
     if (!wallet) return ctx.reply('\u274C No wallet found.');
-    const privateKey = decryptPrivateKey(wallet.encrypted_private_key);
+    const privateKey = decryptPrivateKey(wallet);
     return ctx.reply(
       `\u26A0\uFE0F *CONFIDENTIAL PRIVATE KEY*\n\nDo not share this key with anyone!\n\n\u{1F511} \`${privateKey}\``,
       { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
@@ -724,7 +744,7 @@ bot.command('send', async (ctx) => {
 
   try {
     const senderData = await getOrCreateWallet(ctx.from.id);
-    const privateKey = decryptPrivateKey(senderData.encrypted_private_key);
+    const privateKey = decryptPrivateKey(senderData);
     const signer = new ethers.Wallet(privateKey, provider);
 
     let destinationAddress = '';
@@ -853,6 +873,51 @@ bot.command('adminhelp', async (ctx) => {
       `\u2022 \`/resetallpoints\` \u2014 Clear points for ALL users (leaderboard reset).`;
 
     return ctx.reply(helpText, { parse_mode: 'Markdown' });
+});
+
+bot.command('migrate_wallets', async (ctx) => {
+    const senderId = ctx.from?.id;
+    if (!senderId || !isSuperAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+
+    const statusMsg = await ctx.reply('\u23F3 Fetching all wallets for migration...');
+    const { data: wallets, error: fetchErr } = await supabase.from('user_wallets').select('*');
+    if (fetchErr || !wallets) return ctx.reply(`\u274C Error fetching wallets: ${fetchErr?.message}`);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const wallet of wallets) {
+        if (wallet.encryption_iv && wallet.encryption_auth_tag) continue; // Already migrated
+        if (!wallet.encrypted_private_key || !wallet.encrypted_private_key.includes(':')) continue; // Unknown format
+
+        try {
+            // Decrypt using legacy method
+            const privateKey = decryptPrivateKey(wallet);
+            
+            // Encrypt using new method
+            const { encryptedData, iv, authTag } = encryptPrivateKey(privateKey);
+
+            // Update in DB
+            const { error: updateErr } = await supabase.from('user_wallets').update({
+                encrypted_private_key: encryptedData,
+                encryption_iv: iv,
+                encryption_auth_tag: authTag
+            }).eq('telegram_id', wallet.telegram_id);
+
+            if (updateErr) throw updateErr;
+            successCount++;
+        } catch (err) {
+            console.error('Migration failed for user', wallet.telegram_id, err);
+            failCount++;
+        }
+    }
+
+    return ctx.telegram.editMessageText(
+        ctx.chat.id,
+        statusMsg.message_id,
+        undefined,
+        `\u2705 **Migration Complete**\n\nSuccessfully migrated: ${successCount}\nFailed: ${failCount}`
+    );
 });
 
 bot.command('makeadmin', async (ctx) => {
