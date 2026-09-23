@@ -33,7 +33,32 @@ bot.catch((err: any, ctx) => {
   console.error(`Telegram error in ${ctx.updateType}:`, err?.message || err);
 });
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Use service role key for server-side reads to bypass RLS
+const supabaseAdmin = createClient(
+  SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY
+);
 const provider = new ethers.JsonRpcProvider(ROBINHOOD_RPC_URL);
+
+// ==========================================
+// IN-MEMORY CACHE (refreshed every 2 min)
+// ==========================================
+let cachedChatTriggers: { keyword: string; response: string }[] = [];
+let cachedPointKeywords: { keyword: string; points_reward: number }[] = [];
+
+async function refreshTriggerCache() {
+  const { data: triggers, error: te } = await supabaseAdmin.from('chat_triggers').select('keyword, response');
+  if (te) { console.error('[cache] chat_triggers error:', te.message); }
+  else { cachedChatTriggers = triggers || []; console.log(`[cache] Loaded ${cachedChatTriggers.length} chat triggers`); }
+
+  const { data: keywords, error: ke } = await supabaseAdmin.from('dynamic_keywords').select('keyword, points_reward');
+  if (ke) { console.error('[cache] dynamic_keywords error:', ke.message); }
+  else { cachedPointKeywords = keywords || []; console.log(`[cache] Loaded ${cachedPointKeywords.length} point keywords`); }
+}
+
+// Load on startup, then refresh every 2 minutes
+refreshTriggerCache();
+setInterval(refreshTriggerCache, 2 * 60 * 1000);
 
 const DEX_ROUTER_ADDRESS = process.env.DEX_ROUTER_ADDRESS || '0xcaf681a66d020601342297493863e78c959e5cb2';
 const WETH_ADDRESS = process.env.WETH_ADDRESS || '0x0bd7d308f8e1639fab988df18a8011f41eacad73';
@@ -1196,6 +1221,7 @@ bot.command('addtrigger', async (ctx) => {
   if (!keyword || !response) return ctx.reply('\u274C Both keyword and response are required.');
   const { error } = await supabase.from('chat_triggers').upsert({ keyword, response }, { onConflict: 'keyword' });
   if (error) return ctx.reply(`\u274C Failed: ${error.message}`);
+  refreshTriggerCache(); // immediate cache update
   return ctx.reply(`\u2705 Trigger added!\n\n*When someone says:* \`${keyword}\`\n*Bot replies:* ${response}`, { parse_mode: 'Markdown' });
 });
 
@@ -1205,6 +1231,7 @@ bot.command('removetrigger', async (ctx) => {
   if (!keyword) return ctx.reply('\u26A0\uFE0F Usage: `/removetrigger keyword`', { parse_mode: 'Markdown' });
   const { error } = await supabase.from('chat_triggers').delete().eq('keyword', keyword);
   if (error) return ctx.reply(`\u274C Failed: ${error.message}`);
+  refreshTriggerCache(); // immediate cache update
   return ctx.reply(`\u{1F5D1}\uFE0F Trigger for \`${keyword}\` removed.`, { parse_mode: 'Markdown' });
 });
 
@@ -1221,6 +1248,7 @@ bot.command('cleartriggers', async (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
   const { error } = await supabase.from('chat_triggers').delete().neq('keyword', '');
   if (error) return ctx.reply(`\u274C Failed: ${error.message}`);
+  refreshTriggerCache(); // immediate cache update
   return ctx.reply('\u{1F5D1}\uFE0F All custom chat triggers cleared.');
 });
 
@@ -1249,36 +1277,26 @@ bot.on('message', async (ctx, next) => {
     }
   }
 
-  // 2. Check dynamic DB triggers (chat_triggers table — work in both group and private)
-  const { data: dbTriggers, error: triggerError } = await supabase.from('chat_triggers').select('keyword, response');
-  if (triggerError) {
-    console.error('[chat_triggers] Supabase query error:', triggerError.message);
-  }
-  if (dbTriggers) {
-    for (const trigger of dbTriggers) {
-      if (text.includes(trigger.keyword.toLowerCase())) {
-        return ctx.reply(trigger.response);
-      }
+  // 2. Check cached DB triggers (auto-reply, no points, works in group and private)
+  for (const trigger of cachedChatTriggers) {
+    if (text.includes(trigger.keyword.toLowerCase())) {
+      return ctx.reply(trigger.response);
     }
   }
 
   // 3. Paw-point keywords — only award in group chats, not private
   if (isPrivate) return next();
 
-  const userId = ctx.from.id;
-  const username = ctx.from.username || null;
-  const { data: keywords, error: kwError } = await supabase.from('dynamic_keywords').select('*');
-  if (kwError) console.error('[dynamic_keywords] Supabase query error:', kwError.message);
-  if (!keywords || keywords.length === 0) return next();
-  const matchedKeyword = keywords.find((k) => text.includes(k.keyword.toLowerCase()));
+  const matchedKeyword = cachedPointKeywords.find((k) => text.includes(k.keyword.toLowerCase()));
   if (!matchedKeyword) return next();
 
+  const userId = ctx.from.id;
+  const username = ctx.from.username || null;
   const { data: user } = await supabase.from('users').select('points, last_awarded_at').eq('telegram_id', userId).single();
   const now = new Date();
   if (user?.last_awarded_at) {
     const lastAwarded = new Date(user.last_awarded_at);
-    const diffInSeconds = (now.getTime() - lastAwarded.getTime()) / 1000;
-    if (diffInSeconds < COOLDOWN_SECONDS) return next();
+    if ((now.getTime() - lastAwarded.getTime()) / 1000 < COOLDOWN_SECONDS) return next();
   }
   const currentPoints = user?.points || 0;
   const newBalance = currentPoints + matchedKeyword.points_reward;
@@ -1286,7 +1304,8 @@ bot.on('message', async (ctx, next) => {
     { telegram_id: userId, username, points: newBalance, last_awarded_at: now.toISOString() },
     { onConflict: 'telegram_id' }
   );
-  // Points awarded silently — user can check /wallet to see balance.
+  // Show points earned
+  await ctx.reply(`🐾 +${matchedKeyword.points_reward} Paw Points awarded to ${username ? '@' + username : 'you'}! Total: ${newBalance}`);
   return next();
 });
 
