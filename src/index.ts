@@ -1148,7 +1148,7 @@ const server = http.createServer((req, res) => {
         timestamp: new Date().toISOString(),
       })
     );
-  } else if (req.url === '/' || req.url === '/index.html') {
+  } else if (req.url === '/' || req.url?.startsWith('/?') || req.url?.startsWith('/index.html')) {
     const indexPath = path.join(process.cwd(), 'index.html');
     if (fs.existsSync(indexPath)) {
       res.writeHead(200, { 'Content-Type': 'text/html' });
