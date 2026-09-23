@@ -1238,19 +1238,22 @@ const HARDCODED_TRIGGERS: Record<string, string> = {
 bot.on('message', async (ctx, next) => {
   const message = ctx.message as any;
   if (!message || !message.text || message.text.startsWith('/') || ctx.from?.is_bot) return next();
-  if (ctx.chat.type === 'private') return next();
 
   const text = message.text.toLowerCase();
+  const isPrivate = ctx.chat.type === 'private';
 
-  // 1. Check hardcoded triggers
+  // 1. Check hardcoded triggers (work in both group and private)
   for (const [keyword, response] of Object.entries(HARDCODED_TRIGGERS)) {
     if (text.includes(keyword)) {
       return ctx.reply(response);
     }
   }
 
-  // 2. Check dynamic DB triggers (chat_triggers table — auto-reply responses)
-  const { data: dbTriggers } = await supabase.from('chat_triggers').select('keyword, response');
+  // 2. Check dynamic DB triggers (chat_triggers table — work in both group and private)
+  const { data: dbTriggers, error: triggerError } = await supabase.from('chat_triggers').select('keyword, response');
+  if (triggerError) {
+    console.error('[chat_triggers] Supabase query error:', triggerError.message);
+  }
   if (dbTriggers) {
     for (const trigger of dbTriggers) {
       if (text.includes(trigger.keyword.toLowerCase())) {
@@ -1259,10 +1262,13 @@ bot.on('message', async (ctx, next) => {
     }
   }
 
-  // 3. Check paw-point rewarded keywords (dynamic_keywords table) — awarded silently
+  // 3. Paw-point keywords — only award in group chats, not private
+  if (isPrivate) return next();
+
   const userId = ctx.from.id;
   const username = ctx.from.username || null;
-  const { data: keywords } = await supabase.from('dynamic_keywords').select('*');
+  const { data: keywords, error: kwError } = await supabase.from('dynamic_keywords').select('*');
+  if (kwError) console.error('[dynamic_keywords] Supabase query error:', kwError.message);
   if (!keywords || keywords.length === 0) return next();
   const matchedKeyword = keywords.find((k) => text.includes(k.keyword.toLowerCase()));
   if (!matchedKeyword) return next();
@@ -1280,7 +1286,7 @@ bot.on('message', async (ctx, next) => {
     { telegram_id: userId, username, points: newBalance, last_awarded_at: now.toISOString() },
     { onConflict: 'telegram_id' }
   );
-  // Points are awarded silently — no group chat message. User can check /wallet to see balance.
+  // Points awarded silently — user can check /wallet to see balance.
   return next();
 });
 
