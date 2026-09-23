@@ -629,11 +629,13 @@ bot.action('admin_keywords', async (ctx) => {
   await ctx.answerCbQuery();
   const senderId = ctx.from?.id;
   if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+  const ADMIN_WEB_URL = (process.env.WEBAPP_URL?.trim() || 'https://wifhpaws-bot.onrender.com/').replace(/\/$/, '') + '/admin';
   const keywordsKeyboard = [
-    [{ text: "\u{1F4DC} List Paw-Point Keywords", callback_data: "action_list_keywords" }],
-    [{ text: "\u{1F4AC} List Chat Triggers", callback_data: "action_list_triggers" }],
-    [{ text: "\u2B05\uFE0F Back to Admin Panel", callback_data: "action_open_admin" }]
-  ];
+    [{ text: '🌐 Open Web Admin Panel', web_app: { url: ADMIN_WEB_URL } }],
+    [{ text: '📜 List Paw-Point Keywords', callback_data: 'action_list_keywords' }],
+    [{ text: '💬 List Chat Triggers', callback_data: 'action_list_triggers' }],
+    [{ text: '⬅️ Back to Admin Panel', callback_data: 'action_open_admin' }]
+  ]
 
   return ctx.reply(
     `\u{1F511} *Keywords & Triggers:*\n\n` +
@@ -1305,6 +1307,32 @@ const server = http.createServer((req, res) => {
         timestamp: new Date().toISOString(),
       })
     );
+  } else if (req.url === '/admin' || req.url?.startsWith('/admin?')) {
+    const adminPath = path.join(process.cwd(), 'admin.html');
+    if (fs.existsSync(adminPath)) {
+      let html = fs.readFileSync(adminPath, 'utf8');
+      // Inject runtime Supabase credentials
+      html = html
+        .replace('__SUPABASE_URL__', process.env.SUPABASE_URL || '')
+        .replace('__SUPABASE_ANON_KEY__', process.env.SUPABASE_ANON_KEY || '');
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(html);
+    } else {
+      res.writeHead(404); res.end('Admin panel not found.');
+    }
+  } else if (req.url?.startsWith('/api/is-admin')) {
+    (async () => {
+      try {
+        const urlObj = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+        const telegramId = Number(urlObj.searchParams.get('telegram_id'));
+        const adminCheck = telegramId > 0 && await isAdmin(telegramId);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ is_admin: adminCheck }));
+      } catch {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ is_admin: false }));
+      }
+    })();
   } else if (req.url === '/' || req.url?.startsWith('/?') || req.url?.startsWith('/index.html')) {
     const indexPath = path.join(process.cwd(), 'index.html');
     if (fs.existsSync(indexPath)) {

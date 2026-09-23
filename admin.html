@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WifhPaws Admin Panel</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0f0a;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      padding: 16px;
+      min-height: 100vh;
+    }
+    h1 { font-size: 18px; color: #27d97b; margin-bottom: 4px; }
+    .subtitle { font-size: 12px; color: #8fa89d; margin-bottom: 20px; }
+    h2 { font-size: 14px; color: #27d97b; margin-bottom: 10px; font-weight: 600; }
+    .tab-bar {
+      display: flex; gap: 8px; margin-bottom: 20px;
+    }
+    .tab {
+      flex: 1; padding: 10px; background: rgba(14,43,30,0.6);
+      border: 1px solid rgba(26,110,71,0.3); border-radius: 10px;
+      color: #8fa89d; font-size: 12px; font-weight: 600;
+      cursor: pointer; text-align: center; transition: all 0.2s;
+    }
+    .tab.active { background: rgba(39,217,123,0.15); border-color: #27d97b; color: #27d97b; }
+    .card {
+      background: rgba(14,43,30,0.6);
+      border: 1px solid rgba(26,110,71,0.35);
+      border-radius: 14px; padding: 16px; margin-bottom: 14px;
+    }
+    .system-badge {
+      display: inline-block; background: rgba(39,217,123,0.1);
+      border: 1px solid rgba(39,217,123,0.3); border-radius: 4px;
+      font-size: 10px; padding: 2px 6px; color: #27d97b; margin-bottom: 8px;
+    }
+    .trigger-row {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      padding: 10px 0; border-bottom: 1px solid rgba(26,110,71,0.2); gap: 8px;
+    }
+    .trigger-row:last-child { border-bottom: none; }
+    .trigger-keyword { color: #27d97b; font-size: 12px; font-weight: 700; font-family: monospace; }
+    .trigger-response { color: #ccc; font-size: 12px; margin-top: 2px; }
+    .badge-pts { background: rgba(39,217,123,0.15); border: 1px solid rgba(39,217,123,0.4); color: #27d97b; border-radius: 20px; padding: 2px 8px; font-size: 11px; font-weight: bold; white-space: nowrap; }
+    .btn-del {
+      background: rgba(255,68,68,0.15); border: 1px solid rgba(255,68,68,0.4);
+      color: #ff6b6b; border-radius: 6px; padding: 5px 10px;
+      font-size: 11px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+    }
+    .btn-del:hover { background: rgba(255,68,68,0.3); }
+    input, textarea, select {
+      width: 100%; padding: 10px 12px; background: rgba(5,25,16,0.8);
+      border: 1px solid rgba(26,110,71,0.5); border-radius: 10px;
+      color: #fff; font-size: 13px; outline: none; margin-bottom: 10px;
+      font-family: inherit;
+    }
+    input::placeholder, textarea::placeholder { color: #8fa89d; }
+    textarea { resize: vertical; min-height: 80px; }
+    .btn-primary {
+      width: 100%; padding: 12px; background: linear-gradient(135deg, #059669, #10b981);
+      border: none; border-radius: 12px; color: #fff; font-weight: bold;
+      font-size: 14px; cursor: pointer;
+    }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .empty { color: #8fa89d; font-size: 13px; padding: 12px 0; text-align: center; }
+    .auth-wall { text-align: center; padding: 60px 20px; color: #8fa89d; }
+    .auth-wall h2 { color: #ff6b6b; margin-bottom: 8px; }
+    .alert { padding: 10px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 12px; display: none; }
+    .alert.success { background: rgba(39,217,123,0.15); border: 1px solid rgba(39,217,123,0.4); color: #27d97b; }
+    .alert.error { background: rgba(255,68,68,0.15); border: 1px solid rgba(255,68,68,0.4); color: #ff6b6b; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .lock-icon { font-size: 11px; margin-right: 4px; }
+  </style>
+</head>
+<body>
+
+<div id="auth-wall" class="auth-wall" style="display:none;">
+  <h2>⛔ Access Denied</h2>
+  <p>This page is restricted to WifhPaws admins only.</p>
+</div>
+
+<div id="app" style="display:none;">
+  <h1>🛡️ WifhPaws Admin</h1>
+  <div class="subtitle" id="admin-name">Web Dashboard</div>
+
+  <div class="tab-bar">
+    <div class="tab active" onclick="switchTab('triggers')">💬 Triggers</div>
+    <div class="tab" onclick="switchTab('keywords')">🔑 Keywords</div>
+  </div>
+
+  <!-- CHAT TRIGGERS TAB -->
+  <div class="tab-content active" id="tab-triggers">
+
+    <!-- System Defaults -->
+    <div class="card">
+      <h2>🔒 System Defaults</h2>
+      <div class="system-badge">hardcoded</div>
+      <div id="hardcoded-list"></div>
+    </div>
+
+    <!-- Add Trigger -->
+    <div class="card">
+      <h2>➕ Add Custom Trigger</h2>
+      <div id="trigger-alert" class="alert"></div>
+      <input type="text" id="trigger-keyword" placeholder="Keyword or phrase (e.g. ca, contract)">
+      <textarea id="trigger-response" placeholder="Bot response message"></textarea>
+      <button class="btn-primary" id="btn-add-trigger" onclick="addTrigger()">Save Trigger</button>
+    </div>
+
+    <!-- DB Triggers List -->
+    <div class="card">
+      <h2>📋 Active Custom Triggers</h2>
+      <div id="triggers-list"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- KEYWORDS TAB -->
+  <div class="tab-content" id="tab-keywords">
+
+    <!-- Add Keyword -->
+    <div class="card">
+      <h2>➕ Add Paw-Point Keyword</h2>
+      <div id="kw-alert" class="alert"></div>
+      <input type="text" id="kw-word" placeholder="Keyword or phrase">
+      <input type="number" id="kw-points" placeholder="Points reward (e.g. 10)" min="1">
+      <button class="btn-primary" id="btn-add-kw" onclick="addKeyword()">Save Keyword</button>
+    </div>
+
+    <!-- Keywords List -->
+    <div class="card">
+      <h2>🔑 Active Paw-Point Keywords</h2>
+      <div id="keywords-list"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = '__SUPABASE_URL__';
+  const SUPABASE_ANON_KEY = '__SUPABASE_ANON_KEY__';
+
+  const HARDCODED_TRIGGERS = [
+    { keyword: "wen lambo", response: "🐾 Patience, paw-some friend! Focus on the mission, not the lambo!" },
+    { keyword: "roadmap",   response: "📌 Check our pinned messages for the full WifhPaws ecosystem roadmap!" },
+    { keyword: "wen moon",  response: "🌕 We're already on the launchpad — stay tuned!" },
+    { keyword: "rug",       response: "🛡️ WifhPaws is community-driven and transparent. No rugs here!" },
+  ];
+
+  const API_BASE = window.location.hostname.includes('localhost')
+    ? 'http://localhost:3000'
+    : 'https://wifhpaws-bot.onrender.com';
+
+  let currentUserId = null;
+  let isAdmin = false;
+
+  // ---- AUTH CHECK ----
+  window.addEventListener('DOMContentLoaded', async () => {
+    if (window.Telegram && window.Telegram.WebApp) {
+      const tg = window.Telegram.WebApp;
+      tg.ready(); tg.expand();
+      const user = tg.initDataUnsafe?.user;
+      if (user) {
+        currentUserId = user.id;
+        document.getElementById('admin-name').innerText =
+          `@${user.username || user.first_name}  •  ID: ${user.id}`;
+      }
+    }
+
+    // Ask backend if this user is an admin
+    try {
+      const res = await fetch(`${API_BASE}/api/is-admin?telegram_id=${currentUserId}`);
+      const data = await res.json();
+      isAdmin = data.is_admin === true;
+    } catch (_) { isAdmin = false; }
+
+    if (!isAdmin) {
+      document.getElementById('auth-wall').style.display = 'block';
+    } else {
+      document.getElementById('app').style.display = 'block';
+      renderHardcoded();
+      fetchTriggers();
+      fetchKeywords();
+    }
+  });
+
+  // ---- TABS ----
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['triggers','keywords'][i] === name));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+  }
+
+  // ---- HARDCODED ----
+  function renderHardcoded() {
+    const el = document.getElementById('hardcoded-list');
+    el.innerHTML = HARDCODED_TRIGGERS.map(t => `
+      <div class="trigger-row">
+        <div>
+          <div class="trigger-keyword">${t.keyword}</div>
+          <div class="trigger-response">${t.response}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // ---- TRIGGERS ----
+  async function fetchTriggers() {
+    const res = await sbFetch('/rest/v1/chat_triggers?select=*&order=id.desc');
+    const list = document.getElementById('triggers-list');
+    if (!res || res.length === 0) { list.innerHTML = '<div class="empty">No custom triggers yet.</div>'; return; }
+    list.innerHTML = res.map(t => `
+      <div class="trigger-row">
+        <div style="flex:1">
+          <div class="trigger-keyword">${escHtml(t.keyword)}</div>
+          <div class="trigger-response">${escHtml(t.response)}</div>
+        </div>
+        <button class="btn-del" onclick="deleteTrigger(${t.id})">Delete</button>
+      </div>`).join('');
+  }
+
+  async function addTrigger() {
+    const kw = document.getElementById('trigger-keyword').value.trim().toLowerCase();
+    const resp = document.getElementById('trigger-response').value.trim();
+    if (!kw || !resp) return showAlert('trigger-alert', 'error', 'Both fields are required.');
+    setLoading('btn-add-trigger', true);
+    const err = await sbInsert('/rest/v1/chat_triggers', { keyword: kw, response: resp });
+    setLoading('btn-add-trigger', false);
+    if (err) { showAlert('trigger-alert', 'error', err); return; }
+    document.getElementById('trigger-keyword').value = '';
+    document.getElementById('trigger-response').value = '';
+    showAlert('trigger-alert', 'success', `Trigger "${kw}" added!`);
+    fetchTriggers();
+  }
+
+  async function deleteTrigger(id) {
+    if (!confirm('Delete this trigger?')) return;
+    await sbDelete('/rest/v1/chat_triggers?id=eq.' + id);
+    fetchTriggers();
+  }
+
+  // ---- KEYWORDS ----
+  async function fetchKeywords() {
+    const res = await sbFetch('/rest/v1/dynamic_keywords?select=*&order=keyword.asc');
+    const list = document.getElementById('keywords-list');
+    if (!res || res.length === 0) { list.innerHTML = '<div class="empty">No paw-point keywords yet.</div>'; return; }
+    list.innerHTML = res.map(k => `
+      <div class="trigger-row">
+        <div style="flex:1">
+          <div class="trigger-keyword">${escHtml(k.keyword)}</div>
+        </div>
+        <span class="badge-pts">+${k.points_reward} pts</span>
+        <button class="btn-del" onclick="deleteKeyword('${escHtml(k.keyword)}')">Delete</button>
+      </div>`).join('');
+  }
+
+  async function addKeyword() {
+    const kw = document.getElementById('kw-word').value.trim().toLowerCase();
+    const pts = parseInt(document.getElementById('kw-points').value, 10);
+    if (!kw || !pts || pts <= 0) return showAlert('kw-alert', 'error', 'Enter a valid keyword and positive point value.');
+    setLoading('btn-add-kw', true);
+    const err = await sbUpsert('/rest/v1/dynamic_keywords', { keyword: kw, points_reward: pts }, 'keyword');
+    setLoading('btn-add-kw', false);
+    if (err) { showAlert('kw-alert', 'error', err); return; }
+    document.getElementById('kw-word').value = '';
+    document.getElementById('kw-points').value = '';
+    showAlert('kw-alert', 'success', `Keyword "${kw}" saved with ${pts} pts!`);
+    fetchKeywords();
+  }
+
+  async function deleteKeyword(keyword) {
+    if (!confirm(`Delete keyword "${keyword}"?`)) return;
+    await sbDelete(`/rest/v1/dynamic_keywords?keyword=eq.${encodeURIComponent(keyword)}`);
+    fetchKeywords();
+  }
+
+  // ---- SUPABASE HELPERS ----
+  async function sbFetch(path) {
+    try {
+      const r = await fetch(SUPABASE_URL + path, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY } });
+      return r.ok ? r.json() : null;
+    } catch { return null; }
+  }
+  async function sbInsert(path, body) {
+    try {
+      const r = await fetch(SUPABASE_URL + path, { method: 'POST', headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(body) });
+      if (!r.ok) { const t = await r.text(); return t; }
+      return null;
+    } catch(e) { return e.message; }
+  }
+  async function sbUpsert(path, body, onConflict) {
+    try {
+      const r = await fetch(`${SUPABASE_URL}${path}?on_conflict=${onConflict}`, { method: 'POST', headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body) });
+      if (!r.ok) { const t = await r.text(); return t; }
+      return null;
+    } catch(e) { return e.message; }
+  }
+  async function sbDelete(path) {
+    try { await fetch(SUPABASE_URL + path, { method: 'DELETE', headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY } }); } catch {}
+  }
+
+  // ---- UI HELPERS ----
+  function showAlert(id, type, msg) {
+    const el = document.getElementById(id);
+    el.className = 'alert ' + type;
+    el.innerText = msg;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+  }
+  function setLoading(id, loading) {
+    const btn = document.getElementById(id);
+    btn.disabled = loading;
+    btn.innerText = loading ? 'Saving...' : (id === 'btn-add-trigger' ? 'Save Trigger' : 'Save Keyword');
+  }
+  function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>
