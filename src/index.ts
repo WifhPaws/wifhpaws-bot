@@ -1259,7 +1259,7 @@ bot.on('message', async (ctx, next) => {
     }
   }
 
-  // 3. Check paw-point rewarded keywords (dynamic_keywords table)
+  // 3. Check paw-point rewarded keywords (dynamic_keywords table) — awarded silently
   const userId = ctx.from.id;
   const username = ctx.from.username || null;
   const { data: keywords } = await supabase.from('dynamic_keywords').select('*');
@@ -1280,7 +1280,7 @@ bot.on('message', async (ctx, next) => {
     { telegram_id: userId, username, points: newBalance, last_awarded_at: now.toISOString() },
     { onConflict: 'telegram_id' }
   );
-  await ctx.reply(`🐾 +${matchedKeyword.points_reward} Paw Points awarded to ${username ? '@' + username : 'you'}! Total: ${newBalance}`);
+  // Points are awarded silently — no group chat message. User can check /wallet to see balance.
   return next();
 });
 
