@@ -1284,9 +1284,7 @@ bot.on('message', async (ctx, next) => {
     }
   }
 
-  // 3. Paw-point keywords — only award in group chats, not private
-  if (isPrivate) return next();
-
+  // 3. Paw-point keywords
   const matchedKeyword = cachedPointKeywords.find((k) => text.includes(k.keyword.toLowerCase()));
   if (!matchedKeyword) return next();
 
