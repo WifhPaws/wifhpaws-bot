@@ -1345,6 +1345,12 @@ const server = http.createServer((req, res) => {
     } else {
       res.writeHead(404); res.end('Admin panel not found.');
     }
+  } else if (req.url?.startsWith('/api/refresh-cache')) {
+    (async () => {
+      await refreshTriggerCache();
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ success: true }));
+    })();
   } else if (req.url?.startsWith('/api/is-admin')) {
     (async () => {
       try {

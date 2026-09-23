@@ -207,7 +207,7 @@
 
   // ---- TRIGGERS ----
   async function fetchTriggers() {
-    const res = await sbFetch('/rest/v1/chat_triggers?select=*&order=id.desc');
+    const res = await sbFetch('/rest/v1/chat_triggers?select=*');
     const list = document.getElementById('triggers-list');
     if (!res || res.length === 0) { list.innerHTML = '<div class="empty">No custom triggers yet.</div>'; return; }
     list.innerHTML = res.map(t => `
@@ -216,7 +216,7 @@
           <div class="trigger-keyword">${escHtml(t.keyword)}</div>
           <div class="trigger-response">${escHtml(t.response)}</div>
         </div>
-        <button class="btn-del" onclick="deleteTrigger(${t.id})">Delete</button>
+        <button class="btn-del" onclick="deleteTrigger('${escHtml(t.keyword)}')">Delete</button>
       </div>`).join('');
   }
 
@@ -231,12 +231,14 @@
     document.getElementById('trigger-keyword').value = '';
     document.getElementById('trigger-response').value = '';
     showAlert('trigger-alert', 'success', `Trigger "${kw}" added!`);
+    await fetch(`${API_BASE}/api/refresh-cache`); // Notify bot to refresh memory
     fetchTriggers();
   }
 
-  async function deleteTrigger(id) {
+  async function deleteTrigger(keyword) {
     if (!confirm('Delete this trigger?')) return;
-    await sbDelete('/rest/v1/chat_triggers?id=eq.' + id);
+    await sbDelete(`/rest/v1/chat_triggers?keyword=eq.${encodeURIComponent(keyword)}`);
+    await fetch(`${API_BASE}/api/refresh-cache`);
     fetchTriggers();
   }
 
@@ -266,12 +268,14 @@
     document.getElementById('kw-word').value = '';
     document.getElementById('kw-points').value = '';
     showAlert('kw-alert', 'success', `Keyword "${kw}" saved with ${pts} pts!`);
+    await fetch(`${API_BASE}/api/refresh-cache`);
     fetchKeywords();
   }
 
   async function deleteKeyword(keyword) {
     if (!confirm(`Delete keyword "${keyword}"?`)) return;
     await sbDelete(`/rest/v1/dynamic_keywords?keyword=eq.${encodeURIComponent(keyword)}`);
+    await fetch(`${API_BASE}/api/refresh-cache`);
     fetchKeywords();
   }
 
