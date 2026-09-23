@@ -22,7 +22,7 @@ const WALLET_ENCRYPTION_KEY = process.env.WALLET_ENCRYPTION_KEY;
 const TREASURY_PRIVATE_KEY = process.env.TREASURY_PRIVATE_KEY || '';
 const WIFH_CONTRACT_ADDRESS = process.env.WIFH_CONTRACT_ADDRESS || '';
 const ROBINHOOD_RPC_URL = process.env.ROBINHOOD_RPC_URL || 'https://rpc.mainnet.chain.robinhood.com';
-const WEBAPP_URL = process.env.WEBAPP_URL?.trim() || 'https://wifhpaws-bot.onrender.com/';
+const WEBAPP_URL = (process.env.WEBAPP_URL?.trim() || 'https://wifhpaws-bot.onrender.com/') + '?v=' + Date.now();
 
 if (!BOT_TOKEN || !SUPABASE_URL || !SUPABASE_ANON_KEY || !WALLET_ENCRYPTION_KEY) {
   throw new Error('Missing required environment variables in .env file.');
