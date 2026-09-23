@@ -607,14 +607,36 @@ bot.action('admin_keywords', async (ctx) => {
   await ctx.answerCbQuery();
   const senderId = ctx.from?.id;
   if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+  const keywordsKeyboard = [
+    [{ text: "\u{1F4DC} List Active Keywords", callback_data: "action_list_keywords" }],
+    [{ text: "\u2B05\uFE0F Back to Admin Panel", callback_data: "action_open_admin" }]
+  ];
+
   return ctx.reply(
     `\u{1F511} *Secret Keyword Controls:*\n\n` +
     `\u2022 \`/addkeyword [word or phrase] [points]\` \u2014 Create a hidden chat trigger\n` +
     `\u2022 \`/removekeyword [word]\` \u2014 Delete an existing keyword\n` +
     `\u2022 \`/clearallkeywords\` \u2014 Delete all keywords at once\n` +
     `\u2022 \`/keywords\` \u2014 View all active hidden keywords`,
-    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_ADMIN } }
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keywordsKeyboard } }
   );
+});
+
+bot.action('action_list_keywords', async (ctx) => {
+  await ctx.answerCbQuery();
+  const senderId = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+  
+  const { data: keywords } = await supabase.from('dynamic_keywords').select('*');
+  if (!keywords || keywords.length === 0) return ctx.reply('\u2139\uFE0F No custom rewarded keywords registered.');
+  let text = '\u{1F511} *Active Secret Keywords (Admin View):*\n\n';
+  keywords.forEach((k) => {
+    text += `\u2022 \`${k.keyword}\`: +${k.points_reward} Paw Points\n`;
+  });
+  
+  return ctx.replyWithMarkdownV2(text.replace(/([-_ *\[\]().~`>#+=|{}.!])/g, '\\$1'), {
+    reply_markup: { inline_keyboard: [[{ text: "\u2B05\uFE0F Back", callback_data: "admin_keywords" }]] }
+  });
 });
 
 bot.action('action_my_wallet', async (ctx) => {
