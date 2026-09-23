@@ -60,11 +60,13 @@ if (TREASURY_PRIVATE_KEY) {
   treasurySigner = new ethers.Wallet(TREASURY_PRIVATE_KEY, provider);
 }
 
-// ==========================================
-// CRYPTO ENCRYPTION HELPERS (AES-256-GCM)
-// ==========================================
 const MASTER_KEY_HEX = process.env.ENCRYPTION_MASTER_KEY || process.env.WALLET_ENCRYPTION_KEY || '';
-const MASTER_KEY = Buffer.from(MASTER_KEY_HEX, 'hex');
+let MASTER_KEY = Buffer.from(MASTER_KEY_HEX, 'hex');
+if (MASTER_KEY.length !== 32) {
+  // Safeguard: if the environment variable isn't a perfect 32-byte hex string,
+  // we derive a 32-byte key from it so AES-256-GCM doesn't crash.
+  MASTER_KEY = crypto.scryptSync(process.env.WALLET_ENCRYPTION_KEY!, 'salt', 32);
+}
 
 export function encryptPrivateKey(privateKey: string) {
   const iv = crypto.randomBytes(12);
@@ -885,6 +887,7 @@ bot.command('migrate_wallets', async (ctx) => {
 
     let successCount = 0;
     let failCount = 0;
+    let failErrors: string[] = [];
 
     for (const wallet of wallets) {
         if (wallet.encryption_iv && wallet.encryption_auth_tag) continue; // Already migrated
@@ -906,9 +909,10 @@ bot.command('migrate_wallets', async (ctx) => {
 
             if (updateErr) throw updateErr;
             successCount++;
-        } catch (err) {
+        } catch (err: any) {
             console.error('Migration failed for user', wallet.telegram_id, err);
             failCount++;
+            failErrors.push(`User ${wallet.telegram_id}: ${err.message}`);
         }
     }
 
@@ -916,7 +920,7 @@ bot.command('migrate_wallets', async (ctx) => {
         ctx.chat.id,
         statusMsg.message_id,
         undefined,
-        `\u2705 **Migration Complete**\n\nSuccessfully migrated: ${successCount}\nFailed: ${failCount}`
+        `\u2705 **Migration Complete**\n\nSuccessfully migrated: ${successCount}\nFailed: ${failCount}\n\nErrors:\n${failErrors.join('\n')}`
     );
 });
 
