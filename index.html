@@ -243,11 +243,15 @@
             btn.disabled = true;
 
             try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const mode = urlParams.get('mode');
+
                 const response = await fetch(`${API_BASE_URL}/api/swap`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         telegram_id: currentUserId,
+                        mode: mode,
                         from: fromToken.toLowerCase(),
                         to: toToken.toLowerCase(),
                         amount: amount
@@ -305,9 +309,18 @@
                         document.getElementById('user-handle').innerText = '@' + user.username;
                     }
 
+                    // Check for treasury mode
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const mode = urlParams.get('mode');
+
+                    if (mode === 'treasury') {
+                        document.getElementById('user-name').innerText = 'Treasury Wallet';
+                        document.getElementById('user-handle').innerText = 'Admin Access';
+                    }
+
                     // Fetch live balances & prices from backend
                     try {
-                        const response = await fetch(`${API_BASE_URL}/api/balance?telegram_id=${user.id}`);
+                        const response = await fetch(`${API_BASE_URL}/api/balance?telegram_id=${user.id}${mode ? '&mode=' + mode : ''}`);
                         const data = await response.json();
                         if (data.success) {
                             document.getElementById('wifh-balance').innerText = `${data.wifh_balance} WIFH`;

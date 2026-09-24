@@ -187,17 +187,22 @@ async function getWifhPriceUsd(): Promise<number> {
 
 // Direct on-chain Uniswap V3 Swap Execution (Treasury is NEVER used as counterparty)
 async function executeOnChainSwap(
-  userWallet: { public_address: string; encrypted_private_key: string },
+  userWallet: any | null,
   fromToken: 'eth' | 'wifh',
   toToken: 'eth' | 'wifh',
-  amount: number
+  amount: number,
+  customSigner?: ethers.Wallet
 ): Promise<{ txHash: string; received: string; receivedUsd: string }> {
   if (!DEX_ROUTER_ADDRESS || !WIFH_CONTRACT_ADDRESS) {
     throw new Error('DEX router or WIFH contract address is not configured.');
   }
 
-  const privateKey = decryptPrivateKey(userWallet);
-  const signer = new ethers.Wallet(privateKey, provider);
+  let signer = customSigner;
+  if (!signer) {
+    if (!userWallet) throw new Error('No wallet provided');
+    const privateKey = decryptPrivateKey(userWallet);
+    signer = new ethers.Wallet(privateKey, provider);
+  }
   const routerContract = new ethers.Contract(DEX_ROUTER_ADDRESS, UNISWAP_V3_ROUTER_ABI, signer);
   const ethPrice = await getEthPriceUsd();
   const poolRate = await getPoolRate();
@@ -445,22 +450,31 @@ bot.command('start', async (ctx) => {
   }
 });
 
-async function sendWalletDashboard(ctx: any, telegramId: number, edit: boolean = false) {
+async function sendWalletDashboard(ctx: any, telegramId: number, edit: boolean = false, isTreasury: boolean = false) {
   try {
-    const wallet = await getOrCreateWallet(telegramId);
+    let address = '';
     let ethBalance = '0.0000';
+    let wifhBalance = '0.0';
+
+    if (isTreasury) {
+      if (!treasurySigner) return ctx.reply('❌ Treasury wallet is not configured in .env.');
+      address = treasurySigner.address;
+    } else {
+      const wallet = await getOrCreateWallet(telegramId);
+      address = wallet.public_address;
+    }
+
     try {
-      const ethBalanceWei = await provider.getBalance(wallet.public_address);
+      const ethBalanceWei = await provider.getBalance(address);
       ethBalance = parseFloat(ethers.formatEther(ethBalanceWei)).toFixed(4);
     } catch (e: any) {
       console.warn('RPC ETH balance error:', e.message);
     }
 
-    let wifhBalance = '0.0';
     if (WIFH_CONTRACT_ADDRESS) {
       try {
         const tokenContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, provider);
-        const rawBalance = await tokenContract.balanceOf(wallet.public_address);
+        const rawBalance = await tokenContract.balanceOf(address);
         const decimals = await tokenContract.decimals();
         wifhBalance = ethers.formatUnits(rawBalance, decimals);
       } catch (e) {
@@ -468,16 +482,24 @@ async function sendWalletDashboard(ctx: any, telegramId: number, edit: boolean =
       }
     }
 
-    const messageText = `\u{1F43E} *WifhPaws Wallet Dashboard*\n\n\u{1F4CD} *Address:*\n\`${wallet.public_address}\`\n\n\u{1F4B0} *Balances (Robinhood Chain):*\n\u2022 *ETH (Gas):* \`${ethBalance} ETH\`\n\u2022 *WIFH Token:* \`${wifhBalance}\`\n\nChoose an option below:`;
+    const title = isTreasury ? '🏛️ *WifhPaws Treasury Wallet*' : '🐾 *WifhPaws Wallet Dashboard*';
+    const messageText = `${title}\n\n📍 *Address:*\n\`${address}\`\n\n💰 *Balances (Robinhood Chain):*\n• *ETH (Gas):* \`${ethBalance} ETH\`\n• *WIFH Token:* \`${wifhBalance}\`\n\nChoose an option below:`;
 
+    const webAppUrl = isTreasury ? WEBAPP_URL + '&mode=treasury' : WEBAPP_URL;
+    
+    const prefix = isTreasury ? 'treasury_' : '';
     const keyboard: any[] = [
-      [{ text: '\u{1F680} Launch Mini App Dashboard', web_app: { url: WEBAPP_URL } }],
-      [{ text: '\u{1F4E5} Receive', callback_data: 'action_receive' }, { text: '\u{1F4B8} Send', callback_data: 'action_send_guide' }],
-      [{ text: '\u{1F504} Swap Tokens', callback_data: 'action_swap' }, { text: '\u{1F512} Export Private Key', callback_data: 'action_export_key' }]
+      [{ text: '🚀 Launch Mini App Dashboard', web_app: { url: webAppUrl } }],
+      [{ text: '📥 Receive', callback_data: `action_${prefix}receive` }, { text: '💸 Send', callback_data: `action_${prefix}send_guide` }],
+      [{ text: '🔄 Swap Tokens', callback_data: `action_${prefix}swap` }]
     ];
 
+    if (!isTreasury) {
+      keyboard[2].push({ text: '🔐 Export Private Key', callback_data: 'action_export_key' });
+    }
+
     if (isAdmin(telegramId)) {
-      keyboard.push([{ text: '\u{1F6E1}\uFE0F Open Admin Panel', callback_data: 'action_open_admin' }]);
+      keyboard.push([{ text: '🛡️ Open Admin Panel', callback_data: 'action_open_admin' }]);
     }
 
     if (edit) {
@@ -492,7 +514,7 @@ async function sendWalletDashboard(ctx: any, telegramId: number, edit: boolean =
       );
     }
   } catch (err: any) {
-    return ctx.reply(`\u274C Error accessing wallet: ${err.message}`);
+    return ctx.reply(`❌ Error accessing wallet: ${err.message}`);
   }
 }
 
@@ -526,11 +548,28 @@ bot.action('action_receive', async (ctx) => {
   );
 });
 
+bot.action('action_treasury_receive', async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!treasurySigner) return ctx.reply('❌ Treasury not configured.');
+  return ctx.reply(
+    `📥 *Treasury Deposit*\n\nSend ETH or WIFH on *Robinhood Chain* to the Treasury address below:\n\n\`${treasurySigner.address}\``,
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Back to Treasury Dashboard', callback_data: 'action_my_wallet' }]] } }
+  );
+});
+
 bot.action('action_send_guide', async (ctx) => {
   await ctx.answerCbQuery();
   return ctx.reply(
     `\u{1F4B8} *How to Send Funds*\n\nUse the \`/send\` command in private chat:\n\n\u2022 *To External Wallet:*\n\`/send [amount] [eth/wifh] [0xAddress]\`\n\n\u2022 *To Telegram User:*\n\`/send [amount] [eth/wifh] [@username]\``,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
+  );
+});
+
+bot.action('action_treasury_send_guide', async (ctx) => {
+  await ctx.answerCbQuery();
+  return ctx.reply(
+    `💸 *How to Send Treasury Funds*\n\nUse the \`/tsend\` command in private chat (Admins only):\n\n• *To External Wallet:*\n\`/tsend [amount] [eth/wifh] [0xAddress]\`\n\n• *To Telegram User:*\n\`/tsend [amount] [eth/wifh] [@username]\``,
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Back to Treasury Dashboard', callback_data: 'action_my_wallet' }]] } }
   );
 });
 
@@ -543,6 +582,18 @@ bot.action('action_swap', async (ctx) => {
     `\u2022 *Swap ETH for WIFH:*\n\`/swap [amount] eth wifh\`\n_Example:_ \`/swap 0.01 eth wifh\`\n\n` +
     `\u{1F4A1} *Tip:* You can also launch the Mini App for a visual Swap interface!`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
+  );
+});
+
+bot.action('action_treasury_swap', async (ctx) => {
+  await ctx.answerCbQuery();
+  return ctx.reply(
+    `🔄 *Treasury Token Swap Guide*\n\n` +
+    `Swap Treasury WIFH and ETH using the command (Admins only):\n\n` +
+    `• *Swap WIFH for ETH:*\n\`/tswap [amount] wifh eth\`\n_Example:_ \`/tswap 100 wifh eth\`\n\n` +
+    `• *Swap ETH for WIFH:*\n\`/tswap [amount] eth wifh\`\n_Example:_ \`/tswap 0.01 eth wifh\`\n\n` +
+    `💡 *Tip:* You can also use the Mini App's Swap tab while in Treasury Mode!`,
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Back to Treasury Dashboard', callback_data: 'action_my_wallet' }]] } }
   );
 });
 
@@ -711,20 +762,9 @@ bot.action('action_list_triggers', async (ctx) => {
 
 bot.action('action_my_wallet', async (ctx) => {
   await ctx.answerCbQuery();
-  if (ctx.chat?.type !== 'private') {
-    const botUsername = ctx.botInfo?.username || 'WifhPawsBot';
-    return ctx.reply(
-      '\u{1F512} For your privacy and security, wallet details are managed in private messages.',
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '\u{1F4E9} Open Private Wallet', url: `https://t.me/${botUsername}?start=wallet` }]
-          ]
-        }
-      }
-    );
-  }
-  return sendWalletDashboard(ctx, ctx.from.id);
+  const senderId = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+  return sendWalletDashboard(ctx, senderId, false, true); // isTreasury = true
 });
 
 bot.action('action_open_admin', async (ctx) => {
@@ -743,7 +783,7 @@ bot.action('action_open_admin', async (ctx) => {
     ],
     [
       { text: "\u2753 Help Guide", callback_data: "admin_help" },
-      { text: "\u{1F4B3} My Personal Wallet", callback_data: "action_my_wallet" }
+      { text: "\u{1F3E6} Treasury Wallet Dashboard", callback_data: "action_my_wallet" }
     ]
   ];
 
@@ -844,6 +884,70 @@ bot.command('send', async (ctx) => {
   }
 });
 
+// Treasury Transfer Command (/tsend)
+bot.command('tsend', async (ctx) => {
+  if (ctx.chat.type !== 'private') return ctx.reply('🔒 Transfers can only be initiated in private messages for security.');
+  if (!isAdmin(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
+  if (!treasurySigner) return ctx.reply('❌ Treasury wallet is not configured in .env.');
+
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 4) {
+    return ctx.reply('⚠️ *Usage:* `/tsend [amount] [eth/wifh] [0xAddress or @username]`\n\n*Examples:*\n• `/tsend 10 wifh @username`\n• `/tsend 0.001 eth 0x123...`', { parse_mode: 'Markdown' });
+  }
+
+  const amountStr = args[1];
+  const tokenType = args[2].toLowerCase();
+  const recipientInput: string = String(args[3] || '');
+  if (isNaN(Number(amountStr)) || Number(amountStr) <= 0) return ctx.reply('❌ Please enter a valid positive amount.');
+
+  try {
+    let destinationAddress = '';
+    if ((ethers.isAddress as any)(recipientInput)) {
+      destinationAddress = recipientInput;
+    } else {
+      const cleanUsername = recipientInput.replace('@', '');
+      const { data: recipientUser } = await supabase
+        .from('users')
+        .select('telegram_id')
+        .ilike('username', cleanUsername)
+        .single();
+      if (!recipientUser) return ctx.reply(`❌ Could not find a registered user named @${cleanUsername}.`);
+      const recipientWallet = await getOrCreateWallet(recipientUser.telegram_id);
+      destinationAddress = recipientWallet.public_address;
+    }
+
+    const ethBalance = await provider.getBalance(treasurySigner.address);
+    if (ethBalance === 0n) return ctx.reply('⚠️ Treasury does not have enough native ETH on Robinhood Chain to pay for gas fees.');
+
+    const statusMsg = await ctx.reply('⏳ Processing treasury transaction on Robinhood Chain...');
+    let txHash = '';
+    if (tokenType === 'eth') {
+      const tx = await treasurySigner.sendTransaction({ to: destinationAddress, value: ethers.parseEther(amountStr), gasLimit: 100000n });
+      txHash = tx.hash;
+      await tx.wait();
+    } else if (tokenType === 'wifh') {
+      if (!WIFH_CONTRACT_ADDRESS) return ctx.reply('❌ WIFH contract address is not configured.');
+      const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
+      const decimals = await contract.decimals();
+      const tx = await contract.transfer(destinationAddress, ethers.parseUnits(amountStr, decimals), { gasLimit: 150000n });
+      txHash = tx.hash;
+      await tx.wait();
+    } else {
+      return ctx.reply('❌ Unsupported token. Use `eth` or `wifh`.');
+    }
+
+    return ctx.telegram.editMessageText(
+      ctx.chat.id,
+      statusMsg.message_id,
+      undefined,
+      `✅ *Treasury Transfer Successful!*\n\n💸 *Amount:* \`${amountStr} ${tokenType.toUpperCase()}\`\n📍 *To:* \`${destinationAddress}\`\n🔗 *Tx Hash:* \`${txHash}\``,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    return ctx.reply(`❌ Treasury transaction failed: ${err.message}`);
+  }
+});
+
 // Token Swap Command (/swap)
 bot.command('swap', async (ctx) => {
   if (ctx.chat.type !== 'private') return ctx.reply('\u{1F512} Swaps can only be executed in private messages for security.');
@@ -895,6 +999,88 @@ bot.command('swap', async (ctx) => {
   } catch (err: any) {
     return ctx.reply(`\u274C Swap failed: ${err.message}`);
   }
+});
+
+bot.command('buy', async (ctx) => {
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 2) return ctx.reply('⚠️ *Usage:* `/buy [amount_in_eth]`\n_Buys WIFH using ETH_', { parse_mode: 'Markdown' });
+  ctx.message.text = `/swap ${args[1]} eth wifh`;
+  return bot.handleUpdate(ctx.update);
+});
+
+bot.command('sell', async (ctx) => {
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 2) return ctx.reply('⚠️ *Usage:* `/sell [amount_in_wifh]`\n_Sells WIFH for ETH_', { parse_mode: 'Markdown' });
+  ctx.message.text = `/swap ${args[1]} wifh eth`;
+  return bot.handleUpdate(ctx.update);
+});
+
+// Treasury Swap Command (/tswap)
+bot.command('tswap', async (ctx) => {
+  if (ctx.chat.type !== 'private') return ctx.reply('\u{1F512} Swaps can only be executed in private messages.');
+  if (!isAdmin(ctx.from.id)) return ctx.reply('⛔ Unauthorized. Only admins can swap treasury funds.');
+  if (!treasurySigner) return ctx.reply('❌ Treasury wallet is not configured in .env.');
+
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 4) {
+    return ctx.reply(
+      '⚠️ *Treasury Swap Syntax:* `/tswap [amount] [fromToken] [toToken]`\n\n' +
+      '*Examples:*\n' +
+      '• `/tswap 100 wifh eth`\n' +
+      '• `/tswap 0.01 eth wifh`',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  const amountStr = args[1];
+  const fromToken = args[2].toLowerCase();
+  const toToken = args[3].toLowerCase();
+  const amount = parseFloat(amountStr);
+
+  if (isNaN(amount) || amount <= 0) return ctx.reply('❌ Please enter a valid positive swap amount.');
+
+  if (!['wifh', 'eth'].includes(fromToken) || !['wifh', 'eth'].includes(toToken) || fromToken === toToken) {
+    return ctx.reply('❌ Invalid swap pair. Supported pairs are `wifh` ↔ `eth`.');
+  }
+
+  try {
+    const statusMsg = await ctx.reply('⏳ Calculating rate & executing treasury on-chain swap via DEX...');
+
+    const result = await executeOnChainSwap(null, fromToken as 'eth' | 'wifh', toToken as 'eth' | 'wifh', amount, treasurySigner);
+
+    const poolRate = await getPoolRate();
+    const rateDisplay = fromToken === 'eth'
+      ? `1 ETH = ${Math.round(poolRate).toLocaleString()} WIFH`
+      : `1 WIFH = ${(1 / poolRate).toFixed(8)} ETH`;
+
+    return ctx.telegram.editMessageText(
+      ctx.chat.id,
+      statusMsg.message_id,
+      undefined,
+      `✅ *TREASURY SWAP SUCCESSFUL!*\n\n` +
+      `🔄 *Paid:* \`${amountStr} ${fromToken.toUpperCase()}\`\n` +
+      `🎉 *Received:* \`${result.received} ${toToken.toUpperCase()}\` (~$${result.receivedUsd} USD)\n` +
+      `📈 *Rate:* ${rateDisplay}\n` +
+      `🔗 *Tx:* \`${result.txHash}\``,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    return ctx.reply(`❌ Swap failed: ${err.message}`);
+  }
+});
+
+bot.command('tbuy', async (ctx) => {
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 2) return ctx.reply('⚠️ *Usage:* `/tbuy [amount_in_eth]`', { parse_mode: 'Markdown' });
+  ctx.message.text = `/tswap ${args[1]} eth wifh`;
+  return bot.handleUpdate(ctx.update);
+});
+
+bot.command('tsell', async (ctx) => {
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 2) return ctx.reply('⚠️ *Usage:* `/tsell [amount_in_wifh]`', { parse_mode: 'Markdown' });
+  ctx.message.text = `/tswap ${args[1]} wifh eth`;
+  return bot.handleUpdate(ctx.update);
 });
 
 // ==========================================
@@ -1376,16 +1562,29 @@ const server = http.createServer((req, res) => {
       try {
         const urlObj = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
         const telegramId = Number(urlObj.searchParams.get('telegram_id'));
+        const mode = urlObj.searchParams.get('mode');
 
         if (!telegramId) {
           res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
           return res.end(JSON.stringify({ success: false, error: 'Missing or invalid telegram_id' }));
         }
 
-        const wallet = await getOrCreateWallet(telegramId);
+        let address = '';
+        if (mode === 'treasury') {
+          if (!isAdmin(telegramId)) {
+            res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+            return res.end(JSON.stringify({ success: false, error: 'Unauthorized. Admins only.' }));
+          }
+          if (!treasurySigner) throw new Error('Treasury not configured');
+          address = treasurySigner.address;
+        } else {
+          const wallet = await getOrCreateWallet(telegramId);
+          address = wallet.public_address;
+        }
+
         let ethBalance = '0.0000';
         try {
-          const ethBalanceWei = await provider.getBalance(wallet.public_address);
+          const ethBalanceWei = await provider.getBalance(address);
           ethBalance = parseFloat(ethers.formatEther(ethBalanceWei)).toFixed(4);
         } catch (e: any) {
           console.warn('RPC ETH balance error:', e.message);
@@ -1395,7 +1594,7 @@ const server = http.createServer((req, res) => {
         if (WIFH_CONTRACT_ADDRESS) {
           try {
             const tokenContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, provider);
-            const rawBalance = await tokenContract.balanceOf(wallet.public_address);
+            const rawBalance = await tokenContract.balanceOf(address);
             const decimals = await tokenContract.decimals();
             wifhBalance = ethers.formatUnits(rawBalance, decimals);
           } catch (e) {
@@ -1411,7 +1610,7 @@ const server = http.createServer((req, res) => {
         res.end(
           JSON.stringify({
             success: true,
-            address: wallet.public_address,
+            address: address,
             eth_balance: ethBalance,
             wifh_balance: wifhBalance,
             eth_price_usd: ethPrice,
@@ -1431,6 +1630,7 @@ const server = http.createServer((req, res) => {
       try {
         const payload = JSON.parse(body || '{}');
         const telegramId = Number(payload.telegram_id);
+        const mode = payload.mode;
         const fromToken = String(payload.from || '').toLowerCase();
         const toToken = String(payload.to || '').toLowerCase();
         const amount = Number(payload.amount);
@@ -1440,8 +1640,18 @@ const server = http.createServer((req, res) => {
           return res.end(JSON.stringify({ success: false, error: 'Invalid swap payload parameters' }));
         }
 
-        const userWallet = await getOrCreateWallet(telegramId);
-        const result = await executeOnChainSwap(userWallet, fromToken as 'eth' | 'wifh', toToken as 'eth' | 'wifh', amount);
+        let result;
+        if (mode === 'treasury') {
+          if (!isAdmin(telegramId)) {
+            res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+            return res.end(JSON.stringify({ success: false, error: 'Unauthorized. Admins only.' }));
+          }
+          if (!treasurySigner) throw new Error('Treasury not configured');
+          result = await executeOnChainSwap(null, fromToken as 'eth' | 'wifh', toToken as 'eth' | 'wifh', amount, treasurySigner);
+        } else {
+          const userWallet = await getOrCreateWallet(telegramId);
+          result = await executeOnChainSwap(userWallet, fromToken as 'eth' | 'wifh', toToken as 'eth' | 'wifh', amount);
+        }
 
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(JSON.stringify({ success: true, received: result.received, received_usd: result.receivedUsd, tx_hash: result.txHash }));
