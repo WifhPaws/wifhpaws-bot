@@ -437,10 +437,10 @@ bot.command('start', async (ctx) => {
       ],
       [
         { text: "\u2753 Help Guide", callback_data: "admin_help" },
-        { text: "\u{1F4B3} My Personal Wallet", callback_data: "action_my_wallet" }
+        { text: "🏛️ Treasury Wallet Dashboard", callback_data: "action_treasury_home" }
       ]
     ];
-    return ctx.reply("\u{1F43E} *WifhPaws Admin & Treasury Control*", {
+    return ctx.reply("🛡️ *WifhPaws Admin & Treasury Control*", {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: adminKeyboard }
     });
@@ -536,14 +536,26 @@ bot.command('wallet', async (ctx) => {
 });
 
 // Callback Actions
-const BACK_TO_WALLET = [[{ text: '\u2B05\uFE0F Back to Wallet', callback_data: 'action_my_wallet' }]];
-const BACK_TO_ADMIN = [[{ text: '\u2B05\uFE0F Back to Admin Panel', callback_data: 'action_open_admin' }]];
+const BACK_TO_WALLET = [[{ text: '⬅️ Back to Personal Wallet', callback_data: 'action_wallet_home' }]];
+const BACK_TO_TREASURY = [[{ text: '⬅️ Back to Treasury', callback_data: 'action_treasury_home' }]];
+const BACK_TO_ADMIN = [[{ text: '⬅️ Back to Admin Panel', callback_data: 'action_open_admin' }]];
+
+bot.action('action_wallet_home', async (ctx) => {
+  await ctx.answerCbQuery();
+  return sendWalletDashboard(ctx, ctx.from.id, true, false);
+});
+
+bot.action('action_treasury_home', async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
+  return sendWalletDashboard(ctx, ctx.from.id, true, true);
+});
 
 bot.action('action_receive', async (ctx) => {
   await ctx.answerCbQuery();
   const wallet = await getOrCreateWallet(ctx.from.id);
-  return ctx.reply(
-    `\u{1F4E5} *Deposit Funds*\n\nSend ETH or WIFH on *Robinhood Chain* to your address below:\n\n\`${wallet.public_address}\``,
+  return ctx.editMessageText(
+    `📥 *Deposit Funds*\n\nSend ETH or WIFH on *Robinhood Chain* to your address below:\n\n\`${wallet.public_address}\``,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
   );
 });
@@ -551,49 +563,49 @@ bot.action('action_receive', async (ctx) => {
 bot.action('action_treasury_receive', async (ctx) => {
   await ctx.answerCbQuery();
   if (!treasurySigner) return ctx.reply('❌ Treasury not configured.');
-  return ctx.reply(
+  return ctx.editMessageText(
     `📥 *Treasury Deposit*\n\nSend ETH or WIFH on *Robinhood Chain* to the Treasury address below:\n\n\`${treasurySigner.address}\``,
-    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Back to Treasury Dashboard', callback_data: 'action_my_wallet' }]] } }
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_TREASURY } }
   );
 });
 
 bot.action('action_send_guide', async (ctx) => {
   await ctx.answerCbQuery();
-  return ctx.reply(
-    `\u{1F4B8} *How to Send Funds*\n\nUse the \`/send\` command in private chat:\n\n\u2022 *To External Wallet:*\n\`/send [amount] [eth/wifh] [0xAddress]\`\n\n\u2022 *To Telegram User:*\n\`/send [amount] [eth/wifh] [@username]\``,
+  return ctx.editMessageText(
+    `💸 *How to Send Funds*\n\nUse the \`/send\` command in private chat:\n\n• *To External Wallet:*\n\`/send [amount] [eth/wifh] [0xAddress]\`\n\n• *To Telegram User:*\n\`/send [amount] [eth/wifh] [@username]\``,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
   );
 });
 
 bot.action('action_treasury_send_guide', async (ctx) => {
   await ctx.answerCbQuery();
-  return ctx.reply(
+  return ctx.editMessageText(
     `💸 *How to Send Treasury Funds*\n\nUse the \`/tsend\` command in private chat (Admins only):\n\n• *To External Wallet:*\n\`/tsend [amount] [eth/wifh] [0xAddress]\`\n\n• *To Telegram User:*\n\`/tsend [amount] [eth/wifh] [@username]\``,
-    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Back to Treasury Dashboard', callback_data: 'action_my_wallet' }]] } }
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_TREASURY } }
   );
 });
 
 bot.action('action_swap', async (ctx) => {
   await ctx.answerCbQuery();
-  return ctx.reply(
-    `\u{1F504} *Token Swap Guide*\n\n` +
+  return ctx.editMessageText(
+    `🔄 *Token Swap Guide*\n\n` +
     `Swap WIFH and ETH instantly using the command:\n\n` +
-    `\u2022 *Swap WIFH for ETH:*\n\`/swap [amount] wifh eth\`\n_Example:_ \`/swap 100 wifh eth\`\n\n` +
-    `\u2022 *Swap ETH for WIFH:*\n\`/swap [amount] eth wifh\`\n_Example:_ \`/swap 0.01 eth wifh\`\n\n` +
-    `\u{1F4A1} *Tip:* You can also launch the Mini App for a visual Swap interface!`,
+    `• *Swap WIFH for ETH:*\n\`/swap [amount] wifh eth\`\n_Example:_ \`/swap 100 wifh eth\`\n\n` +
+    `• *Swap ETH for WIFH:*\n\`/swap [amount] eth wifh\`\n_Example:_ \`/swap 0.01 eth wifh\`\n\n` +
+    `💡 *Tip:* You can also launch the Mini App for a visual Swap interface!`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
   );
 });
 
 bot.action('action_treasury_swap', async (ctx) => {
   await ctx.answerCbQuery();
-  return ctx.reply(
+  return ctx.editMessageText(
     `🔄 *Treasury Token Swap Guide*\n\n` +
     `Swap Treasury WIFH and ETH using the command (Admins only):\n\n` +
     `• *Swap WIFH for ETH:*\n\`/tswap [amount] wifh eth\`\n_Example:_ \`/tswap 100 wifh eth\`\n\n` +
     `• *Swap ETH for WIFH:*\n\`/tswap [amount] eth wifh\`\n_Example:_ \`/tswap 0.01 eth wifh\`\n\n` +
     `💡 *Tip:* You can also use the Mini App's Swap tab while in Treasury Mode!`,
-    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Back to Treasury Dashboard', callback_data: 'action_my_wallet' }]] } }
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_TREASURY } }
   );
 });
 
@@ -607,10 +619,14 @@ bot.action('action_export_key', async (ctx) => {
       .single();
     if (!wallet) return ctx.reply('\u274C No wallet found.');
     const privateKey = decryptPrivateKey(wallet);
-    return ctx.reply(
-      `\u26A0\uFE0F *CONFIDENTIAL PRIVATE KEY*\n\nDo not share this key with anyone!\n\n\u{1F511} \`${privateKey}\``,
+    const sentMsg = await ctx.reply(
+      `⚠️ *CONFIDENTIAL PRIVATE KEY*\n\nDo not share this key with anyone! *This message will self-destruct in 60 seconds.*\n\n🔑 \`${privateKey}\``,
       { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_WALLET } }
     );
+    setTimeout(() => {
+      ctx.telegram.deleteMessage(ctx.chat!.id, sentMsg.message_id).catch(() => {});
+    }, 60000);
+    return;
   } catch (err: any) {
     return ctx.reply(`\u274C Error decrypting key: ${err.message}`);
   }
@@ -760,13 +776,6 @@ bot.action('action_list_triggers', async (ctx) => {
 });
 
 
-bot.action('action_my_wallet', async (ctx) => {
-  await ctx.answerCbQuery();
-  const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
-  return sendWalletDashboard(ctx, senderId, false, true); // isTreasury = true
-});
-
 bot.action('action_open_admin', async (ctx) => {
   await ctx.answerCbQuery();
   const senderId = ctx.from?.id;
@@ -783,11 +792,11 @@ bot.action('action_open_admin', async (ctx) => {
     ],
     [
       { text: "\u2753 Help Guide", callback_data: "admin_help" },
-      { text: "\u{1F3E6} Treasury Wallet Dashboard", callback_data: "action_my_wallet" }
+      { text: "🏛️ Treasury Wallet Dashboard", callback_data: "action_treasury_home" }
     ]
   ];
 
-  return ctx.reply("\u{1F6E1}\uFE0F *WifhPaws Admin Control Center*\n\nSelect an option below:", {
+  return ctx.editMessageText("🛡️ *WifhPaws Admin Control Center*\n\nSelect an option below:", {
     parse_mode: "Markdown",
     reply_markup: { inline_keyboard: adminKeyboard }
   });
@@ -1695,8 +1704,18 @@ server.listen(port, () => {
 });
 
 // Launch Bot
-bot.launch().then(() => console.log('WifhPaws Bot running with secret keywords, treasury dashboard, and WebApp!'));
-
+bot.launch().then(() => {
+  console.log('WifhPaws Bot running with secret keywords, treasury dashboard, and WebApp!');
+  bot.telegram.setMyCommands([
+    { command: 'wallet', description: 'Open your Personal Wallet Dashboard' },
+    { command: 'leaderboard', description: 'View the top Paw Point holders' },
+    { command: 'swap', description: 'Swap between WIFH and ETH' },
+    { command: 'send', description: 'Send tokens to someone' },
+    { command: 'buy', description: 'Buy WIFH with ETH' },
+    { command: 'sell', description: 'Sell WIFH for ETH' },
+    { command: 'admin', description: 'Open Admin Control Center (Admins)' }
+  ]).catch(err => console.error('Failed to set commands menu:', err));
+});
 const stopBot = (signal: string) => {
   console.log(`\nReceived ${signal}. Stopping bot...`);
   server.close();
