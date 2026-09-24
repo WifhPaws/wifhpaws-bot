@@ -797,23 +797,27 @@ bot.action('admin_help', async (ctx) => {
   await ctx.answerCbQuery();
   if (!isAdmin(ctx.from!.id)) return ctx.reply('\u26D4 Unauthorized.');
 
-  const helpText = `\u{1F6E1}\uFE0F *Admin Commands Cheat Sheet*\n\n` +
-    `\u{1F464} *Management:*\n` +
-    `\u2022 \`/makeadmin @username\` \u2014 Promote a user to admin.\n` +
-    `\u2022 \`/admin\` \u2014 Open the visual Admin Control Center.\n\n` +
-    `\u{1F3E6} *Treasury & Tokens:*\n` +
-    `\u2022 \`/treasury\` \u2014 View live project treasury balances.\n` +
-    `\u2022 \`/airdrop @username 50\` \u2014 Send 50 WIFH to a user.\n` +
-    `\u2022 \`/airdrop @username $10\` \u2014 Send $10 worth of WIFH.\n\n` +
-    `\u{1F511} *Keyword Rewards:*\n` +
-    `\u2022 \`/keywords\` \u2014 List all active keywords.\n` +
-    `\u2022 \`/addkeyword hello 10\` \u2014 Reward 10 pts for saying "hello".\n` +
-    `\u2022 \`/removekeyword hello\` \u2014 Delete the "hello" keyword.\n` +
-    `\u2022 \`/clearallkeywords\` \u2014 Delete all keywords at once.\n\n` +
-    `\u2B50 *Paw Points:*\n` +
-    `\u2022 \`/addpoints @username 100\` \u2014 Give 100 points.\n` +
-    `\u2022 \`/resetpoints @username\` \u2014 Reset one user's points to 0.\n` +
-    `\u2022 \`/resetallpoints\` \u2014 Clear points for ALL users (leaderboard reset).`;
+  const helpText = `🛡️ *Admin Commands Cheat Sheet*\n\n` +
+    `👤 *Management:*\n` +
+    `• \`/makeadmin @username\` — Promote a user to admin.\n` +
+    `• \`/admin\` — Open the visual Admin Control Center.\n\n` +
+    `🏛️ *Treasury & Tokens:*\n` +
+    `• \`/treasury\` — View live project treasury balances.\n` +
+    `• \`/airdrop @username 50\` — Send 50 WIFH to a user.\n` +
+    `• \`/airdrop @username $10\` — Send $10 worth of WIFH.\n` +
+    `• \`/tsend 10 wifh @username\` — Send from treasury.\n` +
+    `• \`/tswap 10 eth wifh\` — Swap treasury funds.\n` +
+    `• \`/tbuy 0.1\` — Buy WIFH with 0.1 ETH from treasury.\n` +
+    `• \`/tsell 100\` — Sell 100 WIFH from treasury.\n\n` +
+    `🔑 *Keyword Rewards:*\n` +
+    `• \`/keywords\` — List all active keywords.\n` +
+    `• \`/addkeyword hello 10\` — Reward 10 pts for saying "hello".\n` +
+    `• \`/removekeyword hello\` — Delete the "hello" keyword.\n` +
+    `• \`/clearallkeywords\` — Delete all keywords at once.\n\n` +
+    `⭐ *Paw Points:*\n` +
+    `• \`/addpoints @username 100\` — Give 100 points.\n` +
+    `• \`/resetpoints @username\` — Reset one user's points to 0.\n` +
+    `• \`/resetallpoints\` — Clear points for ALL users (leaderboard reset).`;
 
   return ctx.reply(helpText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_ADMIN } });
 });
@@ -1090,23 +1094,27 @@ bot.command('tsell', async (ctx) => {
 bot.command('adminhelp', async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.reply("\u26D4 Unauthorized.");
 
-    const helpText = `\u{1F6E1}\uFE0F *Admin Commands Cheat Sheet*\n\n` +
-      `\u{1F464} *Management:*\n` +
-      `\u2022 \`/makeadmin @username\` \u2014 Promote a user to admin.\n` +
-      `\u2022 \`/admin\` \u2014 Open the visual Admin Control Center.\n\n` +
-      `\u{1F3E6} *Treasury & Tokens:*\n` +
-      `\u2022 \`/treasury\` \u2014 View live project treasury balances.\n` +
-      `\u2022 \`/airdrop @username 50\` \u2014 Send 50 WIFH to a user.\n` +
-      `\u2022 \`/airdrop @username $10\` \u2014 Send $10 worth of WIFH.\n\n` +
-      `\u{1F511} *Keyword Rewards:*\n` +
-      `\u2022 \`/keywords\` \u2014 List all active keywords.\n` +
-      `\u2022 \`/addkeyword hello 10\` \u2014 Reward 10 pts for saying "hello".\n` +
-      `\u2022 \`/removekeyword hello\` \u2014 Delete the "hello" keyword.\n` +
-      `\u2022 \`/clearallkeywords\` \u2014 Delete all keywords at once.\n\n` +
-      `\u2B50 *Paw Points:*\n` +
-      `\u2022 \`/addpoints @username 100\` \u2014 Give 100 points.\n` +
-      `\u2022 \`/resetpoints @username\` \u2014 Reset one user's points to 0.\n` +
-      `\u2022 \`/resetallpoints\` \u2014 Clear points for ALL users (leaderboard reset).`;
+  const helpText = `🛡️ *Admin Commands Cheat Sheet*\n\n` +
+    `👤 *Management:*\n` +
+    `• \`/makeadmin @username\` — Promote a user to admin.\n` +
+    `• \`/admin\` — Open the visual Admin Control Center.\n\n` +
+    `🏛️ *Treasury & Tokens:*\n` +
+    `• \`/treasury\` — View live project treasury balances.\n` +
+    `• \`/airdrop @username 50\` — Send 50 WIFH to a user.\n` +
+    `• \`/airdrop @username $10\` — Send $10 worth of WIFH.\n` +
+    `• \`/tsend 10 wifh @username\` — Send from treasury.\n` +
+    `• \`/tswap 10 eth wifh\` — Swap treasury funds.\n` +
+    `• \`/tbuy 0.1\` — Buy WIFH with 0.1 ETH from treasury.\n` +
+    `• \`/tsell 100\` — Sell 100 WIFH from treasury.\n\n` +
+    `🔑 *Keyword Rewards:*\n` +
+    `• \`/keywords\` — List all active keywords.\n` +
+    `• \`/addkeyword hello 10\` — Reward 10 pts for saying "hello".\n` +
+    `• \`/removekeyword hello\` — Delete the "hello" keyword.\n` +
+    `• \`/clearallkeywords\` — Delete all keywords at once.\n\n` +
+    `⭐ *Paw Points:*\n` +
+    `• \`/addpoints @username 100\` — Give 100 points.\n` +
+    `• \`/resetpoints @username\` — Reset one user's points to 0.\n` +
+    `• \`/resetallpoints\` — Clear points for ALL users (leaderboard reset).`;
 
     return ctx.reply(helpText, { parse_mode: 'Markdown' });
 });
