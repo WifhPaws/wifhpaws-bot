@@ -438,6 +438,9 @@ bot.command('start', async (ctx) => {
       [
         { text: "\u2753 Help Guide", callback_data: "admin_help" },
         { text: "🏛️ Treasury Wallet Dashboard", callback_data: "action_treasury_home" }
+      ],
+      [
+        { text: "⬅️ Back", callback_data: "action_back_to_start" }
       ]
     ];
     return ctx.reply("🛡️ *WifhPaws Admin & Treasury Control*", {
@@ -793,6 +796,9 @@ bot.action('action_open_admin', async (ctx) => {
     [
       { text: "\u2753 Help Guide", callback_data: "admin_help" },
       { text: "🏛️ Treasury Wallet Dashboard", callback_data: "action_treasury_home" }
+    ],
+    [
+      { text: "⬅️ Back", callback_data: "action_wallet_home" }
     ]
   ];
 
