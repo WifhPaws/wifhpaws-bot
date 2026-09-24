@@ -214,7 +214,7 @@ async function executeOnChainSwap(
 
   if (fromToken === 'eth') {
     const ethValWei = ethers.parseEther(amount.toFixed(18));
-    const userEthBal = await provider.getBalance(userWallet.public_address);
+    const userEthBal = await provider.getBalance(signer.address);
     if (userEthBal < ethValWei) {
       throw new Error(`Insufficient ETH balance. You have ${parseFloat(ethers.formatEther(userEthBal)).toFixed(6)} ETH but need ${amount.toFixed(6)} ETH.`);
     }
@@ -223,7 +223,7 @@ async function executeOnChainSwap(
       tokenIn: WETH_ADDRESS,
       tokenOut: WIFH_CONTRACT_ADDRESS,
       fee: 10000,
-      recipient: userWallet.public_address,
+      recipient: signer.address,
       amountIn: ethValWei,
       amountOutMinimum: 0,
       sqrtPriceLimitX96: 0,
@@ -253,12 +253,12 @@ async function executeOnChainSwap(
     const decimals = await wifhContract.decimals();
     const wifhAmountWei = ethers.parseUnits(amount.toFixed(Number(decimals)), decimals);
 
-    const userWifhBal = await wifhContract.balanceOf(userWallet.public_address);
+    const userWifhBal = await wifhContract.balanceOf(signer.address);
     if (userWifhBal < wifhAmountWei) {
       throw new Error(`Insufficient WIFH balance. You have ${ethers.formatUnits(userWifhBal, decimals)} WIFH but need ${amount} WIFH.`);
     }
 
-    const currentAllowance = await wifhContract.allowance(userWallet.public_address, DEX_ROUTER_ADDRESS);
+    const currentAllowance = await wifhContract.allowance(signer.address, DEX_ROUTER_ADDRESS);
     if (currentAllowance < wifhAmountWei) {
       const appTx = await wifhContract.approve(DEX_ROUTER_ADDRESS, ethers.MaxUint256, { gasLimit: 100000n });
       await appTx.wait();
@@ -268,7 +268,7 @@ async function executeOnChainSwap(
       tokenIn: WIFH_CONTRACT_ADDRESS,
       tokenOut: WETH_ADDRESS,
       fee: 10000,
-      recipient: userWallet.public_address,
+      recipient: signer.address,
       amountIn: wifhAmountWei,
       amountOutMinimum: 0,
       sqrtPriceLimitX96: 0,
