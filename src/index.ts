@@ -819,13 +819,15 @@ bot.action('admin_trivia', async (ctx) => {
 
   try {
     const config = await getPayoutConfig();
-    const text = `🧠 *Trivia Payout Settings*\n\n` +
-      `Current Rewards per game:\n` +
+    const text = `🧠 *Trivia Settings & Help*\n\n` +
+      `🏆 *Current Rewards (per game):*\n` +
       `🥇 1st Place: *${config.first} WIFH*\n` +
       `🥈 2nd Place: *${config.second} WIFH*\n` +
       `🥉 3rd Place: *${config.third} WIFH*\n\n` +
-      `To update these payouts, use the command:\n` +
-      `\`/setpayout <1st> <2nd> <3rd>\`\n` +
+      `🛠️ *Trivia Commands (Admins Only):*\n` +
+      `• \`/start_trivia\` — Start a 10-question trivia game in any group.\n` +
+      `• \`/stop_trivia\` — Stop an active trivia game early.\n` +
+      `• \`/setpayout <1st> <2nd> <3rd>\` — Update the payout rewards.\n` +
       `_Example:_ \`/setpayout 100 50 25\``;
 
     const keyboard = [
@@ -1780,6 +1782,21 @@ interface TriviaSession {
   timer?: NodeJS.Timeout;
 }
 const activeTriviaGames = new Map<number, TriviaSession>();
+
+bot.command('stop_trivia', async (ctx) => {
+  if (ctx.chat.type === 'private') return ctx.reply('Trivia must be played in a group.');
+  if (!isAdmin(ctx.from!.id)) return ctx.reply('⛔ Only admins can stop a trivia game.');
+  
+  const session = activeTriviaGames.get(ctx.chat.id);
+  if (!session) {
+    return ctx.reply('ℹ️ There is no active trivia game to stop.');
+  }
+
+  clearTimeout(session.timer);
+  activeTriviaGames.delete(ctx.chat.id);
+  
+  await ctx.reply('🛑 *Trivia Game Stopped early by an admin.*', { parse_mode: 'Markdown' });
+});
 
 bot.command('start_trivia', async (ctx) => {
   if (ctx.chat.type === 'private') return ctx.reply('Trivia must be played in a group.');
