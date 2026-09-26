@@ -13,3 +13,17 @@ create policy "allow read/write for authenticated users"
   on public.user_points
   for all
   using (auth.role() = 'authenticated');
+
+-- Table for token payout configuration (single row)
+create table public.trivia_payouts (
+  id            int primary key default 1,
+  first_amount  numeric not null default 0,
+  second_amount numeric not null default 0,
+  third_amount  numeric not null default 0
+);
+
+-- Table for per‑place reward amounts (admin can set via /settriviapayout)
+create table public.trivia_rewards_config (
+  place  int primary key,
+  amount numeric not null default 0
+);
