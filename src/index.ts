@@ -813,6 +813,56 @@ bot.action('action_open_admin', async (ctx) => {
   });
 });
 
+bot.action('admin_trivia', async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from!.id)) return ctx.reply('⛔ Unauthorized.');
+
+  try {
+    const config = await getPayoutConfig();
+    const text = `🧠 *Trivia Payout Settings*\n\n` +
+      `Current Rewards per game:\n` +
+      `🥇 1st Place: *${config.first} WIFH*\n` +
+      `🥈 2nd Place: *${config.second} WIFH*\n` +
+      `🥉 3rd Place: *${config.third} WIFH*\n\n` +
+      `To update these payouts, use the command:\n` +
+      `\`/setpayout <1st> <2nd> <3rd>\`\n` +
+      `_Example:_ \`/setpayout 100 50 25\``;
+
+    const keyboard = [
+      [{ text: "⬅️ Back", callback_data: "action_open_admin" }]
+    ];
+
+    await ctx.editMessageText(text, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: keyboard }
+    });
+  } catch (err: any) {
+    console.error('[Admin Trivia] Error:', err.message);
+    await ctx.reply('❌ Failed to load trivia settings.');
+  }
+});
+
+bot.command('setpayout', async (ctx) => {
+  if (!ctx.from || !isAdmin(ctx.from.id)) return;
+  const args = ctx.message.text.trim().split(/\s+/).slice(1);
+  if (args.length !== 3) {
+    return ctx.reply('ℹ️ *Usage:* `/setpayout <1st> <2nd> <3rd>`\n*Example:* `/setpayout 100 50 25`', { parse_mode: 'Markdown' });
+  }
+  
+  const [first, second, third] = args.map(Number);
+  if (isNaN(first) || isNaN(second) || isNaN(third)) {
+    return ctx.reply('❌ Payout amounts must be numbers.');
+  }
+  
+  try {
+    await setPayoutConfig(first, second, third);
+    await ctx.reply(`✅ *Trivia Payouts Updated!*\n\n🥇 1st: ${first} WIFH\n🥈 2nd: ${second} WIFH\n🥉 3rd: ${third} WIFH`, { parse_mode: 'Markdown' });
+  } catch (err: any) {
+    console.error('Error setting payouts:', err.message);
+    await ctx.reply('❌ Failed to save payout config.');
+  }
+});
+
 bot.action('admin_help', async (ctx) => {
   await ctx.answerCbQuery();
   if (!isAdmin(ctx.from!.id)) return ctx.reply('\u26D4 Unauthorized.');
