@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import { getPayoutConfig, setPayoutConfig } from './services/triviaPayoutService';
 
 dotenv.config();
+const BOT_USERNAME = process.env.BOT_USERNAME || '';
 
 // Environment Variables
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -396,7 +397,7 @@ async function getTargetUser(ctx: Context): Promise<{ id: number; username?: str
 // WELCOME & USER INTERACTION COMMANDS
 // ==========================================
 
-bot.command('start', async (ctx) => {
+bot.command(['start', `start@${BOT_USERNAME}`], async (ctx) => {
   const userId = ctx.from?.id;
   const message = ctx.message as any;
   const args = message?.text?.split(/\s+/)[1];
@@ -522,7 +523,7 @@ async function sendWalletDashboard(ctx: any, telegramId: number, edit: boolean =
   }
 }
 
-bot.command('wallet', async (ctx) => {
+bot.command(['wallet', `wallet@${BOT_USERNAME}`], async (ctx) => {
   if (ctx.chat.type !== 'private') {
     const botUsername = ctx.botInfo?.username || 'WifhPawsBot';
     return ctx.reply(

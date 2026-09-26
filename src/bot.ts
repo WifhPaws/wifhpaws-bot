@@ -9,30 +9,30 @@ import {
 } from "./config";
 import {
   awardKeywordPoints,
-  getLeaderboard,
-  airdropPointsByHandle,
   getOrCreateUser,
 } from "./supabase";
 
 /**
- * Escapes special regex characters in keywords
- */
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Checks if text contains any of the trigger keywords with word boundaries (case-insensitive)
+ * Checks if text contains any trigger keyword (case-insensitive).
+ * Uses simple word-boundary detection for reliability.
  */
 export function hasTriggerKeyword(text: string, keywords: string[] = TRIGGER_KEYWORDS): boolean {
   if (!text) return false;
+  const lower = text.toLowerCase();
   return keywords.some((kw) => {
-    const escaped = escapeRegex(kw.trim());
-    // Use word boundaries so that "gm" doesn't match inside "segment", etc.
-    const regex = new RegExp(`(^|\\s|[.,!?;:()""''])${escaped}([.,!?;:()""'']|\\s|$)`, "i");
-    return regex.test(text);
+    const kwLower = kw.trim().toLowerCase();
+    if (!kwLower) return false;
+    const idx = lower.indexOf(kwLower);
+    if (idx === -1) return false;
+    // Check word boundaries
+    const before = idx > 0 ? lower[idx - 1] : ' ';
+    const after = idx + kwLower.length < lower.length ? lower[idx + kwLower.length] : ' ';
+    const boundaryChars = ' \t\n.,!?;:()\'"';
+    return (boundaryChars.includes(before) || idx === 0) &&
+           (boundaryChars.includes(after) || idx + kwLower.length === lower.length);
   });
 }
+
 
 /**
  * Initializes and configures the Telegraf bot instance.
@@ -46,24 +46,6 @@ export function createBot(): Telegraf {
 
   const bot = new Telegraf(config.botToken);
 
-  // ----------------------------------------------------------------------------
-  // Command: /start & /help
-  // ----------------------------------------------------------------------------
-  bot.command(["start", "help"], async (ctx) => {
-    const welcomeText =
-      `🐾 *Welcome to WifhPaws!* 🐾\n\n` +
-      `Spread good vibes in the group and earn *Paw Points*!\n\n` +
-      `*How it works:*\n` +
-      `• Say friendly words like \`gm\`, \`thanks\`, \`ty\`, \`lfg\` in group chats.\n` +
-      `• Earn *${POINTS_PER_TRIGGER} points* per trigger (cooldown: ${COOLDOWN_MINUTES} min).\n\n` +
-      `*Available Commands:*\n` +
-      `• /leaderboard - View the top 10 Paw Point holders\n` +
-      `• /mypoints - Check your current Paw Points\n` +
-      `• /setwallet <address> - Link your crypto wallet for future rewards\n` +
-      `• /airdrop @handle <amount> - (Admin only) Airdrop bonus points`;
-
-    await ctx.reply(welcomeText, { parse_mode: "Markdown" });
-  });
 
   // ----------------------------------------------------------------------------
   // Command: /mypoints
@@ -92,93 +74,6 @@ export function createBot(): Telegraf {
     }
   });
 
-  // ----------------------------------------------------------------------------
-  // Command: /leaderboard
-  // ----------------------------------------------------------------------------
-  bot.command("leaderboard", async (ctx) => {
-    try {
-      const topUsers = await getLeaderboard(10);
-
-      if (!topUsers || topUsers.length === 0) {
-        await ctx.reply("🐾 No Paw Points have been awarded yet. Start chatting to get on the board!");
-        return;
-      }
-
-      const medals = ["🥇", "🥈", "🥉"];
-      let text = "🏆 *WifhPaws Top 10 Leaderboard* 🐾\n\n";
-
-      topUsers.forEach((user, index) => {
-        const rankBadge = medals[index] || `*${index + 1}.*`;
-        const displayName = user.username ? `@${user.username}` : `User #${user.telegram_id}`;
-        text += `${rankBadge} ${displayName} — *${user.points}* pts\n`;
-      });
-
-      text += `\nKeep active and spread positive vibes to climb the ranks! 🚀`;
-
-      await ctx.reply(text, { parse_mode: "Markdown" });
-    } catch (err: any) {
-      console.error("[Command: /leaderboard] Error:", err.message);
-      await ctx.reply("❌ Failed to fetch leaderboard. Please try again later.");
-    }
-  });
-
-  // ----------------------------------------------------------------------------
-  // Command: /airdrop @handle <amount> (Admin Only)
-  // ----------------------------------------------------------------------------
-  bot.command("airdrop", async (ctx) => {
-    const senderId = ctx.from?.id;
-    if (!senderId) return;
-
-    // Check admin authorization
-    if (!config.adminUserIds.includes(senderId)) {
-      await ctx.reply("⛔ Unauthorized: This command is restricted to administrators.", {
-        reply_parameters: { message_id: ctx.message.message_id },
-      });
-      return;
-    }
-
-    // Parse arguments: /airdrop @username 100
-    const rawArgs = ctx.message.text.trim().split(/\s+/).slice(1);
-
-    if (rawArgs.length < 2) {
-      await ctx.reply(
-        "ℹ️ *Usage:* `/airdrop @handle <amount>`\n*Example:* `/airdrop @wifpaws_fan 500`",
-        { parse_mode: "Markdown" }
-      );
-      return;
-    }
-
-    const targetHandle = rawArgs[0];
-    const amount = parseInt(rawArgs[1], 10);
-
-    if (isNaN(amount) || amount <= 0) {
-      await ctx.reply("❌ Amount must be a positive integer.");
-      return;
-    }
-
-    try {
-      const result = await airdropPointsByHandle(targetHandle, amount);
-
-      if (!result.success) {
-        await ctx.reply(`⚠️ ${result.error}`);
-        return;
-      }
-
-      const awardedUser = result.user!;
-      const displayHandle = awardedUser.username ? `@${awardedUser.username}` : `@${targetHandle.replace(/^@/, "")}`;
-
-      await ctx.reply(
-        `🎉 *Airdrop Successful!* 🐾\n\n` +
-        `• Recipient: ${displayHandle}\n` +
-        `• Airdropped: *+${amount}* Paw Points\n` +
-        `• New Total Balance: *${awardedUser.points}* pts`,
-        { parse_mode: "Markdown" }
-      );
-    } catch (err: any) {
-      console.error("[Command: /airdrop] Error:", err.message);
-      await ctx.reply("❌ Error executing airdrop. Please check logs.");
-    }
-  });
 
   // ----------------------------------------------------------------------------
   // Group Keyword Listener
