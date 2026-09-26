@@ -30,8 +30,13 @@ export const getPayoutConfig = async (): Promise<PayoutConfig> => {
     .from('trivia_payouts')
     .select('first_amount, second_amount, third_amount')
     .eq('id', 1)
-    .single();
-  if (error) throw error;
+    .maybeSingle();
+    
+  if (error) {
+    console.warn('Notice: Failed to fetch trivia_payouts (might be empty or missing table):', error.message);
+    return { first: 0, second: 0, third: 0 };
+  }
+  
   return {
     first: Number(data?.first_amount ?? 0),
     second: Number(data?.second_amount ?? 0),
