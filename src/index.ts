@@ -1761,8 +1761,173 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`Server listening on port ${port} (Serving Dashboard & /health)`);
 });
+// ==========================================
+// ==========================================
+// TRIVIA GAME LOOP
+// ==========================================
+import { fetchTriviaBatch } from './services/triviaService';
+import { airdropToWinners } from './services/triviaPayoutService';
+import { getOrCreateUser } from './supabase';
+
+interface TriviaSession {
+  chatId: number;
+  questions: any[];
+  currentIdx: number;
+  scores: Record<number, { name: string, score: number, wallet: string }>;
+  guessedUsers: Set<number>;
+  messageId?: number;
+  timer?: NodeJS.Timeout;
+}
+const activeTriviaGames = new Map<number, TriviaSession>();
+
+bot.command('start_trivia', async (ctx) => {
+  if (ctx.chat.type === 'private') return ctx.reply('Trivia must be played in a group.');
+  if (!isAdmin(ctx.from!.id)) return ctx.reply('⛔ Only admins can start a trivia game.');
+  
+  if (activeTriviaGames.has(ctx.chat.id)) {
+    return ctx.reply('⚠️ A trivia game is already running in this chat!');
+  }
+
+  await ctx.reply('🎲 *Fetching Trivia Questions...*', { parse_mode: 'Markdown' });
+
+  try {
+    const questions = await fetchTriviaBatch();
+    const session: TriviaSession = {
+      chatId: ctx.chat.id,
+      questions,
+      currentIdx: 0,
+      scores: {},
+      guessedUsers: new Set()
+    };
+    activeTriviaGames.set(ctx.chat.id, session);
+
+    await ctx.reply(`🧠 *Trivia Game Started!* 🧠\n\nThere are ${questions.length} questions. The top 3 players will win WIFH prizes based on the current payout settings!\n\nGet ready...`, { parse_mode: 'Markdown' });
+    
+    setTimeout(() => sendNextTriviaQuestion(ctx), 3000);
+  } catch (err: any) {
+    console.error('Trivia Error:', err);
+    await ctx.reply('❌ Failed to start trivia. Please try again later.');
+  }
+});
+
+async function sendNextTriviaQuestion(ctx: any) {
+  const session = activeTriviaGames.get(ctx.chat.id);
+  if (!session) return;
+
+  if (session.currentIdx >= session.questions.length) {
+    return endTriviaGame(ctx);
+  }
+
+  const q = session.questions[session.currentIdx];
+  session.guessedUsers.clear();
+
+  const keyboard = q.options.map((opt: string, idx: number) => {
+    return [{ text: opt, callback_data: `tq_${idx}` }];
+  });
+
+  const msg = await ctx.reply(`📝 *Question ${session.currentIdx + 1} of ${session.questions.length}:*\n\n${q.question}`, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: keyboard }
+  });
+
+  session.messageId = msg.message_id;
+
+  session.timer = setTimeout(async () => {
+    await ctx.telegram.editMessageText(ctx.chat.id, session.messageId, undefined, `⏰ *Time's up!* Nobody got it.\n\nThe correct answer was: *${q.options[q.correctOptionId]}*`, { parse_mode: 'Markdown' });
+    session.currentIdx++;
+    setTimeout(() => sendNextTriviaQuestion(ctx), 4000);
+  }, 20000);
+}
+
+bot.action(/tq_(\d+)/, async (ctx) => {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+
+  const session = activeTriviaGames.get(chatId);
+  if (!session) {
+    return ctx.answerCbQuery('No active trivia game!', { show_alert: true });
+  }
+
+  const userId = ctx.from!.id;
+  if (session.guessedUsers.has(userId)) {
+    return ctx.answerCbQuery('You already guessed this question!', { show_alert: true });
+  }
+
+  const chosenIdx = parseInt(ctx.match[1]);
+  const q = session.questions[session.currentIdx];
+
+  session.guessedUsers.add(userId);
+
+  if (chosenIdx === q.correctOptionId) {
+    clearTimeout(session.timer);
+    
+    if (!session.scores[userId]) {
+      const dbUser = await getOrCreateUser(userId, ctx.from!.username || ctx.from!.first_name || 'Player');
+      session.scores[userId] = {
+        name: ctx.from!.username ? `@${ctx.from!.username}` : (ctx.from!.first_name || 'Player'),
+        score: 0,
+        wallet: dbUser?.wallet_address || ''
+      };
+    }
+    session.scores[userId].score += 1;
+
+    await ctx.answerCbQuery('Correct! 🎉');
+    
+    await ctx.telegram.editMessageText(chatId, session.messageId, undefined, `✅ *Correct!* ${session.scores[userId].name} got it first!\n\nQuestion: ${q.question}\nAnswer: *${q.options[q.correctOptionId]}*`, { parse_mode: 'Markdown' });
+    
+    session.currentIdx++;
+    setTimeout(() => sendNextTriviaQuestion(ctx), 4000);
+  } else {
+    await ctx.answerCbQuery('Wrong answer! ❌');
+  }
+});
+
+async function endTriviaGame(ctx: any) {
+  const session = activeTriviaGames.get(ctx.chat.id);
+  if (!session) return;
+  activeTriviaGames.delete(ctx.chat.id);
+
+  const players = Object.values(session.scores).sort((a, b) => b.score - a.score);
+  
+  if (players.length === 0) {
+    return ctx.reply('🏁 *Trivia Finished!*\n\nNobody scored any points! 😢', { parse_mode: 'Markdown' });
+  }
+
+  let text = '🏁 *Trivia Finished! Here are the final scores:*\n\n';
+  players.forEach((p, idx) => {
+    let medal = '';
+    if (idx === 0) medal = '🥇';
+    else if (idx === 1) medal = '🥈';
+    else if (idx === 2) medal = '🥉';
+    text += `${medal ? medal + ' ' : ''}${idx + 1}. ${p.name} - ${p.score} pts\n`;
+  });
+
+  await ctx.reply(text, { parse_mode: 'Markdown' });
+
+  try {
+    const config = await getPayoutConfig();
+    const winners = [];
+    if (players[0] && players[0].wallet) winners.push({ place: 1, wallet: players[0].wallet, name: players[0].name });
+    if (players[1] && players[1].wallet) winners.push({ place: 2, wallet: players[1].wallet, name: players[1].name });
+    if (players[2] && players[2].wallet) winners.push({ place: 3, wallet: players[2].wallet, name: players[2].name });
+
+    if (winners.length > 0) {
+      await airdropToWinners(winners, config);
+      let airdropText = `💸 *Airdrop Initiated for Top Players!*\n\n`;
+      winners.forEach(w => {
+        const amt = w.place === 1 ? config.first : (w.place === 2 ? config.second : config.third);
+        if (amt > 0) airdropText += `• ${w.name} receives *${amt} WIFH*\n`;
+      });
+      await ctx.reply(airdropText, { parse_mode: 'Markdown' });
+    } else {
+      await ctx.reply('⚠️ *No winners had registered wallets.* Remind players to link their wallets via `/start wallet` in DM to receive airdrops!');
+    }
+  } catch (err: any) {
+    console.error('Error during trivia payout:', err);
+    await ctx.reply('⚠️ Error processing trivia payouts.');
+  }
+}
 
 // Launch Bot
 bot.launch().then(() => {
