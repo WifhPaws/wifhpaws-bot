@@ -794,7 +794,10 @@ bot.action('action_open_admin', async (ctx) => {
       { text: "\u{1F511} Keywords", callback_data: "admin_keywords" }
     ],
     [
-      { text: "\u2753 Help Guide", callback_data: "admin_help" },
+      { text: "\u{1F4AC} Trivia Settings", callback_data: "admin_trivia" },
+      { text: "\u2753 Help Guide", callback_data: "admin_help" }
+    ],
+    [
       { text: "🏛️ Treasury Wallet Dashboard", callback_data: "action_treasury_home" }
     ],
     [
