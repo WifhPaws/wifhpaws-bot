@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import { getPayoutConfig, setPayoutConfig } from './services/triviaPayoutService';
 
 dotenv.config();
 
