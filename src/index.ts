@@ -7,6 +7,8 @@ import { ethers } from 'ethers';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { getPayoutConfig, setPayoutConfig } from './services/triviaPayoutService';
+import { calculateAndRouteFee, dispatchFeesToTreasury } from './services/feeService';
+import { sendDevPanelMenu, setupDevPanelActions } from './services/devPanelService';
 
 dotenv.config();
 const BOT_USERNAME = process.env.BOT_USERNAME || '';
@@ -406,6 +408,13 @@ bot.command(['start', `start@${BOT_USERNAME}`], async (ctx) => {
     return sendWalletDashboard(ctx, ctx.from.id);
   }
 
+  if (args === 'devpanel' && ctx.chat.type === 'private') {
+    if (userId && isAdmin(userId)) {
+      return sendDevPanelMenu(ctx);
+    }
+    return ctx.reply('⛔ Unauthorized.');
+  }
+
   if (args === 'send' && ctx.chat.type === 'private') {
     return ctx.reply(
       `\u{1F4B8} *How to Send Funds*\n\nUse the \`/send\` command in private chat:\n\n\u2022 *To External Wallet:*\n\`/send [amount] [eth/wifh] [0xAddress]\`\n\n\u2022 *To Telegram User:*\n\`/send [amount] [eth/wifh] [@username]\``,
@@ -426,29 +435,9 @@ bot.command(['start', `start@${BOT_USERNAME}`], async (ctx) => {
     );
   }
 
-  // Private chat: show admin panel for admins, wallet dashboard for regular users
+  // Private chat: show dev panel for admins, wallet dashboard for regular users
   if (userId && isAdmin(userId)) {
-    const adminKeyboard: any[] = [
-      [
-        { text: "\u{1F3E6} View Treasury", callback_data: "admin_treasury" },
-        { text: "\u{1FA82} Airdrop Token", callback_data: "admin_airdrop" }
-      ],
-      [
-        { text: "\u2699\uFE0F Reset Points", callback_data: "admin_reset" },
-        { text: "\u{1F511} Keywords", callback_data: "admin_keywords" }
-      ],
-      [
-        { text: "\u2753 Help Guide", callback_data: "admin_help" },
-        { text: "🏛️ Treasury Wallet Dashboard", callback_data: "action_treasury_home" }
-      ],
-      [
-        { text: "⬅️ Back", callback_data: "action_back_to_start" }
-      ]
-    ];
-    return ctx.reply("🛡️ *WifhPaws Admin & Treasury Control*", {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: adminKeyboard }
-    });
+    return sendDevPanelMenu(ctx);
   } else {
     // Regular user private chat: show wallet dashboard
     return sendWalletDashboard(ctx, userId!);
@@ -781,7 +770,7 @@ bot.action('action_list_triggers', async (ctx) => {
 });
 
 
-bot.action('action_open_admin', async (ctx) => {
+bot.action('admin_tools_menu', async (ctx) => {
   await ctx.answerCbQuery();
   const senderId = ctx.from?.id;
   if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
@@ -803,7 +792,8 @@ bot.action('action_open_admin', async (ctx) => {
       { text: "🏛️ Treasury Wallet Dashboard", callback_data: "action_treasury_home" }
     ],
     [
-      { text: "⬅️ Back", callback_data: "action_wallet_home" }
+      { text: "🛠️ Back to Dev Panel", callback_data: "dev_panel" },
+      { text: "⬅️ Back to Wallet", callback_data: "action_wallet_home" }
     ]
   ];
 
@@ -811,6 +801,29 @@ bot.action('action_open_admin', async (ctx) => {
     parse_mode: "Markdown",
     reply_markup: { inline_keyboard: adminKeyboard }
   });
+});
+
+// Setup Dev Panel actions (buy, sell, burn, dev_back, action_open_admin, dev_panel)
+setupDevPanelActions(bot, async (id) => (id !== undefined ? isAdmin(id) : false));
+
+// ==========================================
+// ADMIN / DEV PANEL COMMANDS
+// ==========================================
+bot.command(['devpanel', `devpanel@${BOT_USERNAME}`, 'admin', `admin@${BOT_USERNAME}`], async (ctx) => {
+  if (ctx.chat.type !== 'private') {
+    const botUsername = ctx.botInfo?.username || 'WifhPawsBot';
+    return ctx.reply('🔒 Admin panel is only available in private messages.', {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🛠️ Open Dev Panel', url: `https://t.me/${botUsername}?start=devpanel` }]
+        ]
+      }
+    });
+  }
+  if (!ctx.from || !isAdmin(ctx.from.id)) {
+    return ctx.reply('⛔ Unauthorized. This command is restricted to admins.');
+  }
+  return sendDevPanelMenu(ctx);
 });
 
 bot.action('admin_trivia', async (ctx) => {
@@ -931,7 +944,7 @@ bot.action('admin_help', async (ctx) => {
 });
 
 // Transfer Command (/send)
-bot.command('send', async (ctx) => {
+bot.command(['send', `send@${BOT_USERNAME}`], async (ctx) => {
   if (ctx.chat.type !== 'private') return ctx.reply('\u{1F512} Transfers can only be initiated in private messages for security.');
 
   const args = ctx.message.text.split(' ').filter(Boolean);
@@ -969,17 +982,40 @@ bot.command('send', async (ctx) => {
 
     const statusMsg = await ctx.reply('\u23F3 Processing transaction on Robinhood Chain...');
     let txHash = '';
+    let successDetails = '';
+
     if (tokenType === 'eth') {
       const tx = await signer.sendTransaction({ to: destinationAddress, value: ethers.parseEther(amountStr), gasLimit: 100000n });
       txHash = tx.hash;
       await tx.wait();
+      successDetails =
+        `\u{1F4B8} *Amount:* \`${amountStr} ETH\`\n` +
+        `\u{1F4CD} *To:* \`${destinationAddress}\`\n` +
+        `\u{1F517} *Tx Hash:* \`${txHash}\``;
     } else if (tokenType === 'wifh') {
       if (!WIFH_CONTRACT_ADDRESS) return ctx.reply('\u274C WIFH contract address is not configured.');
       const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, signer);
       const decimals = await contract.decimals();
-      const tx = await contract.transfer(destinationAddress, ethers.parseUnits(amountStr, decimals), { gasLimit: 150000n });
+      const totalAmount = ethers.parseUnits(amountStr, decimals);
+      const { userAmount, feeAmount } = calculateAndRouteFee(totalAmount);
+
+      const tx = await contract.transfer(destinationAddress, userAmount, { gasLimit: 150000n });
       txHash = tx.hash;
       await tx.wait();
+
+      if (feeAmount > 0n) {
+        await dispatchFeesToTreasury(feeAmount, contract, signer, treasurySigner?.address);
+      }
+
+      const receivedFormatted = ethers.formatUnits(userAmount, decimals);
+      const feeFormatted = ethers.formatUnits(feeAmount, decimals);
+
+      successDetails =
+        `\u{1F4B8} *Total Sent:* \`${amountStr} WIFH\`\n` +
+        `\u{1F4E5} *Recipient Received (99%):* \`${receivedFormatted} WIFH\`\n` +
+        `\u{1F3E6} *Treasury Fee (1%):* \`${feeFormatted} WIFH\`\n` +
+        `\u{1F4CD} *To:* \`${destinationAddress}\`\n` +
+        `\u{1F517} *Tx Hash:* \`${txHash}\``;
     } else {
       return ctx.reply('\u274C Unsupported token. Use `eth` or `wifh`.');
     }
@@ -988,7 +1024,7 @@ bot.command('send', async (ctx) => {
       ctx.chat.id,
       statusMsg.message_id,
       undefined,
-      `\u2705 *Transaction Successful!*\n\n\u{1F4B8} *Amount:* \`${amountStr} ${tokenType.toUpperCase()}\`\n\u{1F4CD} *To:* \`${destinationAddress}\`\n\u{1F517} *Tx Hash:* \`${txHash}\``,
+      `\u2705 *Transaction Successful!*\n\n${successDetails}`,
       { parse_mode: 'Markdown' }
     );
   } catch (err: any) {
@@ -1312,37 +1348,20 @@ bot.command('makeadmin', async (ctx) => {
     await ctx.reply(`\u2705 Success! @${targetUsername} has been granted admin privileges.`);
 });
 
-bot.command('admin', async (ctx) => {
-  const senderId = ctx.from.id;
-  if (!isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized. This command is restricted to project administrators.');
-
-  const adminKeyboard: any[] = [
-    [
-      { text: "\u{1F3E6} View Treasury", callback_data: "admin_treasury" },
-      { text: "\u{1FA82} Airdrop Token", callback_data: "admin_airdrop" }
-    ],
-    [
-      { text: "\u2699\uFE0F Reset Points", callback_data: "admin_reset" },
-      { text: "\u{1F511} Keywords", callback_data: "admin_keywords" }
-    ]
-  ];
-  
-  if (ctx.chat.type === 'private') {
-    adminKeyboard.push([
-      { text: "\u2753 Help Guide", callback_data: "admin_help" },
-      { text: "\u{1F4B3} My Personal Wallet", callback_data: "action_my_wallet" }
-    ]);
-  } else {
-    adminKeyboard.push([
-      { text: "\u2753 Help Guide", callback_data: "admin_help" },
-      { text: "\u{1F4B3} My Personal Wallet", callback_data: "action_my_wallet" }
-    ]);
+bot.command(['devpanel', `devpanel@${BOT_USERNAME}`], async (ctx) => {
+  const senderId = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) {
+    return ctx.reply('\u26D4 Unauthorized. This command is restricted to project administrators.');
   }
+  return sendDevPanelMenu(ctx);
+});
 
-  return ctx.reply("\u{1F6E1}\uFE0F *WifhPaws Admin Control Center*\n\nSelect an option below:", {
-    parse_mode: "Markdown",
-    reply_markup: { inline_keyboard: adminKeyboard }
-  });
+bot.command(['admin', `admin@${BOT_USERNAME}`], async (ctx) => {
+  const senderId = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) {
+    return ctx.reply('\u26D4 Unauthorized. This command is restricted to project administrators.');
+  }
+  return sendDevPanelMenu(ctx);
 });
 
 bot.command('treasury', async (ctx) => {
@@ -1983,7 +2002,8 @@ bot.launch().then(() => {
     { command: 'send', description: 'Send tokens to someone' },
     { command: 'buy', description: 'Buy WIFH with ETH' },
     { command: 'sell', description: 'Sell WIFH for ETH' },
-    { command: 'admin', description: 'Open Admin Control Center (Admins)' }
+    { command: 'admin', description: 'Open Admin & Dev Control Panel (Admins)' },
+    { command: 'devpanel', description: 'Open Developer & Liquidity Control Panel (Admins)' }
   ]).catch(err => console.error('Failed to set commands menu:', err));
 });
 const stopBot = (signal: string) => {
