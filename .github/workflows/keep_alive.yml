@@ -1,0 +1,32 @@
+name: Keep Render Service Alive
+
+on:
+  schedule:
+    # Run every 10 minutes (cron syntax: minute hour day-of-month month day-of-week)
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions tab
+
+jobs:
+  ping:
+    name: Ping Render Web Service
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Service
+        env:
+          SERVICE_URL: ${{ secrets.RENDER_SERVICE_URL || vars.RENDER_SERVICE_URL || 'https://wifhpaws-bot.onrender.com' }}
+        run: |
+          echo "Pinging service at: $SERVICE_URL"
+          
+          # Ping root endpoint (with follow redirects and 60s timeout for cold starts)
+          ROOT_STATUS=$(curl -s -L -o /dev/null -w "%{http_code}" --max-time 60 "$SERVICE_URL/")
+          echo "Root (/) HTTP status: $ROOT_STATUS"
+          
+          # Ping health endpoint
+          HEALTH_STATUS=$(curl -s -L -o /dev/null -w "%{http_code}" --max-time 60 "$SERVICE_URL/health")
+          echo "Health (/health) HTTP status: $HEALTH_STATUS"
+          
+          if [ "$ROOT_STATUS" -ge 200 ] && [ "$ROOT_STATUS" -lt 400 ]; then
+            echo "✅ Service successfully pinged and kept awake."
+          else
+            echo "⚠️ Received non-success status code ($ROOT_STATUS). Service may still be spinning up."
+          fi

@@ -810,20 +810,25 @@ setupDevPanelActions(bot, async (id) => (id !== undefined ? isAdmin(id) : false)
 // ADMIN / DEV PANEL COMMANDS
 // ==========================================
 bot.command(['devpanel', `devpanel@${BOT_USERNAME}`, 'admin', `admin@${BOT_USERNAME}`], async (ctx) => {
-  if (ctx.chat.type !== 'private') {
-    const botUsername = ctx.botInfo?.username || 'WifhPawsBot';
-    return ctx.reply('🔒 Admin panel is only available in private messages.', {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '🛠️ Open Dev Panel', url: `https://t.me/${botUsername}?start=devpanel` }]
-        ]
-      }
-    });
+  try {
+    if (ctx.chat.type !== 'private') {
+      const botUsername = ctx.botInfo?.username || 'WifhPawsBot';
+      return ctx.reply('🔒 Admin panel is only available in private messages.', {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🛠️ Open Dev Panel', url: `https://t.me/${botUsername}?start=devpanel` }]
+          ]
+        }
+      });
+    }
+    if (!ctx.from || !isAdmin(ctx.from.id)) {
+      return ctx.reply('⛔ Unauthorized. This command is restricted to admins.');
+    }
+    return await sendDevPanelMenu(ctx);
+  } catch (err: any) {
+    console.error('[/devpanel] Unhandled error:', err?.message || err);
+    return ctx.reply('❌ Failed to open the Dev Panel. Please try again.');
   }
-  if (!ctx.from || !isAdmin(ctx.from.id)) {
-    return ctx.reply('⛔ Unauthorized. This command is restricted to admins.');
-  }
-  return sendDevPanelMenu(ctx);
 });
 
 bot.action('admin_trivia', async (ctx) => {
@@ -1993,7 +1998,7 @@ async function endTriviaGame(ctx: any) {
 }
 
 // Launch Bot
-bot.launch().then(() => {
+bot.launch({ allowedUpdates: ['message', 'callback_query'] }).then(() => {
   console.log('WifhPaws Bot running with secret keywords, treasury dashboard, and WebApp!');
   bot.telegram.setMyCommands([
     { command: 'wallet', description: 'Open your Personal Wallet Dashboard' },
