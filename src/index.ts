@@ -7,8 +7,8 @@ import { ethers } from 'ethers';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { getPayoutConfig, setPayoutConfig } from './services/triviaPayoutService';
-import { calculateAndRouteFee, dispatchFeesToTreasury } from './services/feeService';
-import { sendDevPanelMenu, setupDevPanelActions } from './services/devPanelService';
+import { calculateAndRouteFee, dispatchFeesToDevWallet, getDevWalletAddress } from './services/feeService';
+import { sendDevPanelMenu, setupDevPanelActions, DevPanelDeps } from './services/devPanelService';
 
 dotenv.config();
 const BOT_USERNAME = process.env.BOT_USERNAME || '';
@@ -87,6 +87,17 @@ const COOLDOWN_SECONDS = 60;
 let treasurySigner: ethers.Wallet | null = null;
 if (TREASURY_PRIVATE_KEY) {
   treasurySigner = new ethers.Wallet(TREASURY_PRIVATE_KEY, provider);
+}
+
+// Dedicated Dev Wallet (receives all fees and revenue streams)
+let devSigner: ethers.Wallet | null = null;
+if (process.env.DEV_WALLET_PRIVATE_KEY) {
+  devSigner = new ethers.Wallet(process.env.DEV_WALLET_PRIVATE_KEY, provider);
+  console.log(`[DevWallet] Initialized: ${devSigner.address}`);
+} else if (getDevWalletAddress()) {
+  console.log(`[DevWallet] Address-only mode: ${getDevWalletAddress()} (read-only, no signing)`);
+} else {
+  console.warn('[DevWallet] Not configured — fees will fall back to Treasury if set.');
 }
 
 const MASTER_KEY_HEX = process.env.ENCRYPTION_MASTER_KEY || process.env.WALLET_ENCRYPTION_KEY || '';
@@ -409,8 +420,8 @@ bot.command(['start', `start@${BOT_USERNAME}`], async (ctx) => {
   }
 
   if (args === 'devpanel' && ctx.chat.type === 'private') {
-    if (userId && isAdmin(userId)) {
-      return sendDevPanelMenu(ctx);
+    if (userId && DEV_PANEL_ALLOWED_IDS.includes(userId)) {
+      return sendDevPanelMenu(ctx, devPanelDeps);
     }
     return ctx.reply('⛔ Unauthorized.');
   }
@@ -435,13 +446,14 @@ bot.command(['start', `start@${BOT_USERNAME}`], async (ctx) => {
     );
   }
 
-  // Private chat: show dev panel for admins, wallet dashboard for regular users
-  if (userId && isAdmin(userId)) {
-    return sendDevPanelMenu(ctx);
-  } else {
-    // Regular user private chat: show wallet dashboard
-    return sendWalletDashboard(ctx, userId!);
+  if (userId && DEV_PANEL_ALLOWED_IDS.includes(userId)) {
+    // If you want Dev Panel on /start for these users:
+    // return sendDevPanelMenu(ctx, devPanelDeps);
+    // OR just show wallet, they can use /devpanel
   }
+
+  // Regular private chat: show wallet dashboard
+  return sendWalletDashboard(ctx, userId!);
 });
 
 async function sendWalletDashboard(ctx: any, telegramId: number, edit: boolean = false, isTreasury: boolean = false) {
@@ -770,50 +782,95 @@ bot.action('action_list_triggers', async (ctx) => {
 });
 
 
-bot.action('admin_tools_menu', async (ctx) => {
-  await ctx.answerCbQuery();
-  const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+// ⚠️ Only these Telegram user IDs can access Dev Options — hardcoded for security
+const DEV_PANEL_ALLOWED_IDS = [ 6078125076 ];
+
+// ─── Reusable Admin Panel Renderer ───────────────────────────────────────────
+async function sendAdminPanel(ctx: any) {
+  const senderId: number = ctx.from?.id;
+  if (!senderId || !isAdmin(senderId)) {
+    const reply = ctx.reply || ctx.answerCbQuery;
+    return ctx.reply('⛔ Unauthorized.');
+  }
 
   const adminKeyboard: any[] = [
     [
-      { text: "\u{1F3E6} View Treasury", callback_data: "admin_treasury" },
-      { text: "\u{1FA82} Airdrop Token", callback_data: "admin_airdrop" }
+      { text: '🏦 View Treasury', callback_data: 'admin_treasury' },
+      { text: '🪂 Airdrop Token', callback_data: 'admin_airdrop' },
     ],
     [
-      { text: "\u2699\uFE0F Reset Points", callback_data: "admin_reset" },
-      { text: "\u{1F511} Keywords", callback_data: "admin_keywords" }
+      { text: '⚙️ Reset Points', callback_data: 'admin_reset' },
+      { text: '🔑 Keywords', callback_data: 'admin_keywords' },
     ],
     [
-      { text: "\u{1F4AC} Trivia Settings", callback_data: "admin_trivia" },
-      { text: "\u2753 Help Guide", callback_data: "admin_help" }
+      { text: '💬 Trivia Settings', callback_data: 'admin_trivia' },
+      { text: '❓ Help Guide', callback_data: 'admin_help' },
     ],
     [
-      { text: "🏛️ Treasury Wallet Dashboard", callback_data: "action_treasury_home" }
+      { text: '🏛️ Treasury Wallet', callback_data: 'action_treasury_home' },
     ],
     [
-      { text: "🛠️ Back to Dev Panel", callback_data: "dev_panel" },
-      { text: "⬅️ Back to Wallet", callback_data: "action_wallet_home" }
-    ]
+      { text: '⬅️ Back to Wallet', callback_data: 'action_wallet_home' },
+    ],
   ];
 
-  return ctx.editMessageText("🛡️ *WifhPaws Admin Control Center*\n\nSelect an option below:", {
-    parse_mode: "Markdown",
-    reply_markup: { inline_keyboard: adminKeyboard }
-  });
-});
+  // Only show the Dev Options button to hardcoded dev IDs
+  if (DEV_PANEL_ALLOWED_IDS.includes(senderId)) {
+    adminKeyboard.splice(4, 0, [
+      { text: '🛠️ Dev Options', callback_data: 'dev_panel' },
+    ]);
+  }
 
-// Setup Dev Panel actions (buy, sell, burn, dev_back, action_open_admin, dev_panel)
-setupDevPanelActions(bot, async (id) => (id !== undefined ? isAdmin(id) : false));
+  const text = '🛡️ *WifhPaws Admin Control Center*\n\nSelect an option below:';
+
+  if (ctx.callbackQuery) {
+    try {
+      await ctx.answerCbQuery();
+      return ctx.editMessageText(text, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: adminKeyboard },
+      });
+    } catch {
+      // Fallback if message can't be edited
+    }
+  }
+  return ctx.reply(text, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: adminKeyboard },
+  });
+}
+
+bot.action('admin_tools_menu', async (ctx) => sendAdminPanel(ctx));
+
+// Build DevPanel dependency bundle (provider, contract info, dev signer)
+const devPanelDeps: DevPanelDeps = {
+  provider,
+  wifhContractAddress: WIFH_CONTRACT_ADDRESS,
+  erc20Abi: ERC20_ABI,
+  devSigner,
+};
 
 // ==========================================
 // ADMIN / DEV PANEL COMMANDS
 // ==========================================
-bot.command(['devpanel', `devpanel@${BOT_USERNAME}`, 'admin', `admin@${BOT_USERNAME}`], async (ctx) => {
+
+// Setup Dev Panel actions — passes deps so the panel can show live Dev Wallet data
+setupDevPanelActions(bot, async (id) => (id !== undefined ? DEV_PANEL_ALLOWED_IDS.includes(id) : false), devPanelDeps);
+
+bot.command(['admin', `admin@${BOT_USERNAME}`], async (ctx) => {
+  if (!ctx.from || !isAdmin(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
+  return sendAdminPanel(ctx);
+});
+
+bot.action('action_open_admin', async (ctx) => {
+  return sendAdminPanel(ctx);
+});
+
+bot.command(['devpanel', `devpanel@${BOT_USERNAME}`], async (ctx) => {
   try {
     if (ctx.chat.type !== 'private') {
       const botUsername = ctx.botInfo?.username || 'WifhPawsBot';
-      return ctx.reply('🔒 Admin panel is only available in private messages.', {
+      return ctx.reply('🔒 Dev panel is only available in private messages.', {
         reply_markup: {
           inline_keyboard: [
             [{ text: '🛠️ Open Dev Panel', url: `https://t.me/${botUsername}?start=devpanel` }]
@@ -821,10 +878,10 @@ bot.command(['devpanel', `devpanel@${BOT_USERNAME}`, 'admin', `admin@${BOT_USERN
         }
       });
     }
-    if (!ctx.from || !isAdmin(ctx.from.id)) {
-      return ctx.reply('⛔ Unauthorized. This command is restricted to admins.');
+    if (!ctx.from || !DEV_PANEL_ALLOWED_IDS.includes(ctx.from.id)) {
+      return ctx.reply('⛔ Unauthorized. This command is restricted to hardcoded developers.');
     }
-    return await sendDevPanelMenu(ctx);
+    return await sendDevPanelMenu(ctx, devPanelDeps);
   } catch (err: any) {
     console.error('[/devpanel] Unhandled error:', err?.message || err);
     return ctx.reply('❌ Failed to open the Dev Panel. Please try again.');
@@ -1009,7 +1066,8 @@ bot.command(['send', `send@${BOT_USERNAME}`], async (ctx) => {
       await tx.wait();
 
       if (feeAmount > 0n) {
-        await dispatchFeesToTreasury(feeAmount, contract, signer, treasurySigner?.address);
+        const devFeeAddress = devSigner?.address || getDevWalletAddress();
+        await dispatchFeesToDevWallet(feeAmount, contract, signer, devFeeAddress || undefined);
       }
 
       const receivedFormatted = ethers.formatUnits(userAmount, decimals);
@@ -1018,7 +1076,7 @@ bot.command(['send', `send@${BOT_USERNAME}`], async (ctx) => {
       successDetails =
         `\u{1F4B8} *Total Sent:* \`${amountStr} WIFH\`\n` +
         `\u{1F4E5} *Recipient Received (99%):* \`${receivedFormatted} WIFH\`\n` +
-        `\u{1F3E6} *Treasury Fee (1%):* \`${feeFormatted} WIFH\`\n` +
+        `\u{1F6E0}\uFE0F *Dev Fee (1%):* \`${feeFormatted} WIFH\`\n` +
         `\u{1F4CD} *To:* \`${destinationAddress}\`\n` +
         `\u{1F517} *Tx Hash:* \`${txHash}\``;
     } else {
@@ -1237,8 +1295,142 @@ bot.command('tsell', async (ctx) => {
 });
 
 // ==========================================
+// DEV WALLET COMMANDS (/dsend, /dswap, /dbuy, /dsell)
+// ==========================================
+
+// Dev Wallet Transfer Command (/dsend)
+bot.command('dsend', async (ctx) => {
+  if (ctx.chat.type !== 'private') return ctx.reply('🔒 Dev Wallet transfers can only be initiated in private messages.');
+  if (!ctx.from || !DEV_PANEL_ALLOWED_IDS.includes(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
+  if (!devSigner) return ctx.reply('❌ Dev Wallet private key is not configured. Set `DEV_WALLET_PRIVATE_KEY` in your environment variables.');
+
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 4) {
+    return ctx.reply(
+      '⚠️ *Usage:* `/dsend [amount] [eth/wifh] [0xAddress or @username]`\n\n*Examples:*\n• `/dsend 10 wifh @username`\n• `/dsend 0.001 eth 0x123...`',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  const amountStr = args[1];
+  const tokenType = args[2].toLowerCase();
+  const recipientInput: string = String(args[3] || '');
+  if (isNaN(Number(amountStr)) || Number(amountStr) <= 0) return ctx.reply('❌ Please enter a valid positive amount.');
+
+  try {
+    let destinationAddress = '';
+    if ((ethers.isAddress as any)(recipientInput)) {
+      destinationAddress = recipientInput;
+    } else {
+      const cleanUsername = recipientInput.replace('@', '');
+      const { data: recipientUser } = await supabase
+        .from('users')
+        .select('telegram_id')
+        .ilike('username', cleanUsername)
+        .single();
+      if (!recipientUser) return ctx.reply(`❌ Could not find a registered user named @${cleanUsername}.`);
+      const recipientWallet = await getOrCreateWallet(recipientUser.telegram_id);
+      destinationAddress = recipientWallet.public_address;
+    }
+
+    const ethBalance = await provider.getBalance(devSigner.address);
+    if (ethBalance === 0n) return ctx.reply('⚠️ Dev Wallet does not have enough native ETH to pay for gas fees.');
+
+    const statusMsg = await ctx.reply('⏳ Processing Dev Wallet transaction on Robinhood Chain...');
+    let txHash = '';
+    if (tokenType === 'eth') {
+      const tx = await devSigner.sendTransaction({ to: destinationAddress, value: ethers.parseEther(amountStr), gasLimit: 100000n });
+      txHash = tx.hash;
+      await tx.wait();
+    } else if (tokenType === 'wifh') {
+      if (!WIFH_CONTRACT_ADDRESS) return ctx.reply('❌ WIFH contract address is not configured.');
+      const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, devSigner);
+      const decimals = await contract.decimals();
+      const tx = await contract.transfer(destinationAddress, ethers.parseUnits(amountStr, decimals), { gasLimit: 150000n });
+      txHash = tx.hash;
+      await tx.wait();
+    } else {
+      return ctx.reply('❌ Unsupported token. Use `eth` or `wifh`.');
+    }
+
+    return ctx.telegram.editMessageText(
+      ctx.chat.id,
+      statusMsg.message_id,
+      undefined,
+      `✅ *Dev Wallet Transfer Successful!*\n\n🛠️ *From:* Dev Wallet\n💸 *Amount:* \`${amountStr} ${tokenType.toUpperCase()}\`\n📍 *To:* \`${destinationAddress}\`\n🔗 *Tx Hash:* \`${txHash}\``,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    return ctx.reply(`❌ Dev Wallet transaction failed: ${err.message}`);
+  }
+});
+
+// Dev Wallet Swap Command (/dswap)
+bot.command('dswap', async (ctx) => {
+  if (ctx.chat.type !== 'private') return ctx.reply('🔒 Dev Wallet swaps can only be executed in private messages.');
+  if (!ctx.from || !DEV_PANEL_ALLOWED_IDS.includes(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
+  if (!devSigner) return ctx.reply('❌ Dev Wallet private key is not configured. Set `DEV_WALLET_PRIVATE_KEY` in your environment variables.');
+
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 4) {
+    return ctx.reply(
+      '⚠️ *Dev Wallet Swap Syntax:* `/dswap [amount] [fromToken] [toToken]`\n\n*Examples:*\n• `/dswap 100 wifh eth`\n• `/dswap 0.01 eth wifh`',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  const amountStr = args[1];
+  const fromToken = args[2].toLowerCase();
+  const toToken = args[3].toLowerCase();
+  const amount = parseFloat(amountStr);
+
+  if (isNaN(amount) || amount <= 0) return ctx.reply('❌ Please enter a valid positive swap amount.');
+  if (!['wifh', 'eth'].includes(fromToken) || !['wifh', 'eth'].includes(toToken) || fromToken === toToken) {
+    return ctx.reply('❌ Invalid swap pair. Supported pairs are `wifh` ↔ `eth`.');
+  }
+
+  try {
+    const statusMsg = await ctx.reply('⏳ Calculating rate & executing Dev Wallet on-chain swap via DEX...');
+
+    const result = await executeOnChainSwap(null, fromToken as 'eth' | 'wifh', toToken as 'eth' | 'wifh', amount, devSigner);
+
+    const poolRate = await getPoolRate();
+    const rateDisplay = fromToken === 'eth'
+      ? `1 ETH = ${Math.round(poolRate).toLocaleString()} WIFH`
+      : `1 WIFH = ${(1 / poolRate).toFixed(8)} ETH`;
+
+    return ctx.telegram.editMessageText(
+      ctx.chat.id,
+      statusMsg.message_id,
+      undefined,
+      `✅ *DEV WALLET SWAP SUCCESSFUL!*\n\n🛠️ *Wallet:* Dev Wallet\n🔄 *Paid:* \`${amountStr} ${fromToken.toUpperCase()}\`\n🎉 *Received:* \`${result.received} ${toToken.toUpperCase()}\` (~$${result.receivedUsd} USD)\n📈 *Rate:* ${rateDisplay}\n🔗 *Tx:* \`${result.txHash}\``,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    return ctx.reply(`❌ Dev Wallet swap failed: ${err.message}`);
+  }
+});
+
+bot.command('dbuy', async (ctx) => {
+  if (!ctx.from || !DEV_PANEL_ALLOWED_IDS.includes(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 2) return ctx.reply('⚠️ *Usage:* `/dbuy [amount_in_eth]`\n_Buys WIFH using Dev Wallet ETH_', { parse_mode: 'Markdown' });
+  ctx.message.text = `/dswap ${args[1]} eth wifh`;
+  return bot.handleUpdate(ctx.update);
+});
+
+bot.command('dsell', async (ctx) => {
+  if (!ctx.from || !DEV_PANEL_ALLOWED_IDS.includes(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 2) return ctx.reply('⚠️ *Usage:* `/dsell [amount_in_wifh]`\n_Sells Dev Wallet WIFH for ETH_', { parse_mode: 'Markdown' });
+  ctx.message.text = `/dswap ${args[1]} wifh eth`;
+  return bot.handleUpdate(ctx.update);
+});
+
+// ==========================================
 // ADMIN HELP & TREASURY COMMANDS
 // ==========================================
+
 
 bot.command('adminhelp', async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.reply("\u26D4 Unauthorized.");
@@ -1353,21 +1545,8 @@ bot.command('makeadmin', async (ctx) => {
     await ctx.reply(`\u2705 Success! @${targetUsername} has been granted admin privileges.`);
 });
 
-bot.command(['devpanel', `devpanel@${BOT_USERNAME}`], async (ctx) => {
-  const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) {
-    return ctx.reply('\u26D4 Unauthorized. This command is restricted to project administrators.');
-  }
-  return sendDevPanelMenu(ctx);
-});
 
-bot.command(['admin', `admin@${BOT_USERNAME}`], async (ctx) => {
-  const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) {
-    return ctx.reply('\u26D4 Unauthorized. This command is restricted to project administrators.');
-  }
-  return sendDevPanelMenu(ctx);
-});
+
 
 bot.command('treasury', async (ctx) => {
   const senderId = ctx.from.id;
@@ -1428,16 +1607,25 @@ bot.command('airdrop', async (ctx) => {
     }
     const statusMsg = await ctx.reply('\u23F3 Executing Treasury Airdrop on Robinhood Chain...');
     const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
-    const decimals = await contract.decimals();
-    const tx = await contract.transfer(destinationAddress, ethers.parseUnits(tokenAmount.toString(), decimals));
-    await tx.wait();
-    return ctx.telegram.editMessageText(
-      ctx.chat.id,
-      statusMsg.message_id,
-      undefined,
-      `\u{1F389} *AIRDROP SUCCESSFUL!*\n\n\u{1F381} *Amount:* \`${tokenAmount} WIFH\`${isDollar ? ` _(~$${rawValue.toFixed(2)} USD)_` : ''}\n\u{1F4CD} *Recipient:* \`${destinationAddress}\`\n\u{1F517} *Tx Hash:* \`${tx.hash}\``,
-      { parse_mode: 'Markdown' }
-    );
+const decimals = await contract.decimals();
+// Convert total amount to smallest units (bigint)
+const totalUnits = ethers.parseUnits(tokenAmount.toString(), decimals);
+// Calculate 1% fee and user portion
+const { userAmount, feeAmount } = calculateAndRouteFee(totalUnits);
+// Transfer user portion
+const txUser = await contract.transfer(destinationAddress, userAmount);
+await txUser.wait();
+// Route fee to Dev Wallet (if any)
+if (feeAmount > 0n) {
+  await dispatchFeesToDevWallet(feeAmount, contract, treasurySigner);
+}
+return ctx.telegram.editMessageText(
+  ctx.chat.id,
+  statusMsg.message_id,
+  undefined,
+  `\u{1F389} *AIRDROP SUCCESSFUL!*\n\n\u{1F381} *Sent Amount:* \`${ethers.formatUnits(userAmount, decimals)} WIFH\`\n\u{1F4B0} *Fee (1%):* \`${ethers.formatUnits(feeAmount, decimals)} WIFH\`\n\u{1F4CD} *Recipient:* \`${destinationAddress}\`\n\u{1F517} *Tx Hash:* \`${txUser.hash}\``,
+  { parse_mode: 'Markdown' }
+);
   } catch (err: any) {
     return ctx.reply(`\u274C Airdrop failed: ${err.message}`);
   }
