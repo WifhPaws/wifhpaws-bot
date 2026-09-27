@@ -1,4 +1,4 @@
-import http from 'http';
+import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { Telegraf, Context, Markup } from 'telegraf';
@@ -844,24 +844,60 @@ bot.action('admin_trivia', async (ctx) => {
   }
 });
 
-bot.command('setpayout', async (ctx) => {
-  if (!ctx.from || !isAdmin(ctx.from.id)) return;
-  const args = ctx.message.text.trim().split(/\s+/).slice(1);
+bot.command(['setpayout', `setpayout@${BOT_USERNAME}`], async (ctx) => {
+  if (!ctx.from || !isAdmin(ctx.from.id)) {
+    return ctx.reply('⛔ Unauthorized. Only admins can configure trivia payouts.');
+  }
+
+  const message = ctx.message as any;
+  const text = message?.text || '';
+  const args = text.trim().split(/\s+/).slice(1);
+
   if (args.length !== 3) {
-    return ctx.reply('ℹ️ *Usage:* `/setpayout <1st> <2nd> <3rd>`\n*Example:* `/setpayout 100 50 25`', { parse_mode: 'Markdown' });
+    return ctx.reply(
+      'ℹ️ *Usage:* `/setpayout <1st> <2nd> <3rd>`\n\n' +
+      '• `<1st>`: Reward for 1st place (in WIFH)\n' +
+      '• `<2nd>`: Reward for 2nd place (in WIFH)\n' +
+      '• `<3rd>`: Reward for 3rd place (in WIFH)\n\n' +
+      '*Example:* `/setpayout 100 50 25`',
+      { parse_mode: 'Markdown' }
+    );
   }
-  
-  const [first, second, third] = args.map(Number);
-  if (isNaN(first) || isNaN(second) || isNaN(third)) {
-    return ctx.reply('❌ Payout amounts must be numbers.');
+
+  const [raw1, raw2, raw3] = args;
+  const first = Number(raw1);
+  const second = Number(raw2);
+  const third = Number(raw3);
+
+  if (
+    isNaN(first) || isNaN(second) || isNaN(third) ||
+    !isFinite(first) || !isFinite(second) || !isFinite(third)
+  ) {
+    return ctx.reply(
+      '❌ *Invalid amounts:* Payout rewards must be valid numbers.\n\n' +
+      '*Usage:* `/setpayout <1st> <2nd> <3rd>`\n' +
+      '_Example:_ `/setpayout 100 50 25`',
+      { parse_mode: 'Markdown' }
+    );
   }
-  
+
+  if (first < 0 || second < 0 || third < 0) {
+    return ctx.reply('❌ *Invalid amounts:* Payout amounts cannot be negative.', { parse_mode: 'Markdown' });
+  }
+
   try {
     await setPayoutConfig(first, second, third);
-    await ctx.reply(`✅ *Trivia Payouts Updated!*\n\n🥇 1st: ${first} WIFH\n🥈 2nd: ${second} WIFH\n🥉 3rd: ${third} WIFH`, { parse_mode: 'Markdown' });
+    const confirmation =
+      `✅ *Trivia Payout Rewards Updated!*\n\n` +
+      `🏆 *New Reward Structure (per game):*\n` +
+      `🥇 *1st Place:* \`${first} WIFH\`\n` +
+      `🥈 *2nd Place:* \`${second} WIFH\`\n` +
+      `🥉 *3rd Place:* \`${third} WIFH\`\n\n` +
+      `💡 _These rewards will automatically apply to upcoming trivia games._`;
+    await ctx.reply(confirmation, { parse_mode: 'Markdown' });
   } catch (err: any) {
-    console.error('Error setting payouts:', err.message);
-    await ctx.reply('❌ Failed to save payout config.');
+    console.error('Error setting payouts:', err.message || err);
+    await ctx.reply(`❌ *Failed to save payout config:* ${err.message || 'Unknown error'}`);
   }
 });
 
@@ -1574,195 +1610,186 @@ bot.on('message', async (ctx, next) => {
 });
 
 // ==========================================
-// LIGHTWEIGHT HTTP SERVER FOR RENDER / 24/7 & WEBAPP
+// LIGHTWEIGHT EXPRESS HTTP SERVER FOR RENDER / 24/7 & WEBAPP
 // ==========================================
+const app = express();
 const port = process.env.PORT || 3000;
-const server = http.createServer((req, res) => {
+
+app.use(express.json());
+
+// CORS & Preflight Handling
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    });
-    return res.end();
+    return res.sendStatus(204);
   }
+  next();
+});
 
-  if (req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(
-      JSON.stringify({
-        status: 'healthy',
-        bot: 'WifhPaws',
-        timestamp: new Date().toISOString(),
-      })
-    );
-  } else if (req.url === '/admin' || req.url?.startsWith('/admin?')) {
-    const adminPath = path.join(process.cwd(), 'admin.html');
-    if (fs.existsSync(adminPath)) {
-      let html = fs.readFileSync(adminPath, 'utf8');
-      // Inject runtime Supabase credentials
-      html = html
-        .replace('__SUPABASE_URL__', process.env.SUPABASE_URL || '')
-        .replace('__SUPABASE_ANON_KEY__', process.env.SUPABASE_ANON_KEY || '');
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(html);
-    } else {
-      res.writeHead(404); res.end('Admin panel not found.');
-    }
-  } else if (req.url?.startsWith('/api/refresh-cache')) {
-    (async () => {
-      await refreshTriggerCache();
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({ success: true }));
-    })();
-  } else if (req.url?.startsWith('/api/is-admin')) {
-    (async () => {
-      try {
-        const urlObj = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-        const telegramId = Number(urlObj.searchParams.get('telegram_id'));
-        const adminCheck = telegramId > 0 && await isAdmin(telegramId);
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ is_admin: adminCheck }));
-      } catch {
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ is_admin: false }));
-      }
-    })();
-  } else if (req.url === '/' || req.url?.startsWith('/?') || req.url?.startsWith('/index.html')) {
-    const indexPath = path.join(process.cwd(), 'index.html');
-    if (fs.existsSync(indexPath)) {
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(fs.readFileSync(indexPath));
-    } else {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'healthy', bot: 'WifhPaws' }));
-    }
-  } else if (req.url?.startsWith('/api/balance')) {
-    (async () => {
-      try {
-        const urlObj = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-        const telegramId = Number(urlObj.searchParams.get('telegram_id'));
-        const mode = urlObj.searchParams.get('mode');
+// Root Route (/) - Returns status 200 to keep Render service awake 24/7 and serves Mini App
+app.get(['/', '/index.html'], (req, res) => {
+  const indexPath = path.join(process.cwd(), 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.status(200).sendFile(indexPath);
+  }
+  return res.status(200).json({ status: 'healthy', bot: 'WifhPaws' });
+});
 
-        if (!telegramId) {
-          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          return res.end(JSON.stringify({ success: false, error: 'Missing or invalid telegram_id' }));
-        }
+// Health Check Route (/health)
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    bot: 'WifhPaws',
+    timestamp: new Date().toISOString(),
+  });
+});
 
-        let address = '';
-        if (mode === 'treasury') {
-          if (!isAdmin(telegramId)) {
-            res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-            return res.end(JSON.stringify({ success: false, error: 'Unauthorized. Admins only.' }));
-          }
-          if (!treasurySigner) throw new Error('Treasury not configured');
-          address = treasurySigner.address;
-        } else {
-          const wallet = await getOrCreateWallet(telegramId);
-          address = wallet.public_address;
-        }
-
-        let ethBalance = '0.0000';
-        try {
-          const ethBalanceWei = await provider.getBalance(address);
-          ethBalance = parseFloat(ethers.formatEther(ethBalanceWei)).toFixed(4);
-        } catch (e: any) {
-          console.warn('RPC ETH balance error:', e.message);
-        }
-
-        let wifhBalance = '0.0';
-        if (WIFH_CONTRACT_ADDRESS) {
-          try {
-            const tokenContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, provider);
-            const rawBalance = await tokenContract.balanceOf(address);
-            const decimals = await tokenContract.decimals();
-            wifhBalance = ethers.formatUnits(rawBalance, decimals);
-          } catch (e) {
-            wifhBalance = '0.0';
-          }
-        }
-
-        const ethPrice = await getEthPriceUsd();
-        const poolRate = await getPoolRate();
-        const wifhPriceUsd = (ethPrice / poolRate).toFixed(8);
-
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(
-          JSON.stringify({
-            success: true,
-            address: address,
-            eth_balance: ethBalance,
-            wifh_balance: wifhBalance,
-            eth_price_usd: ethPrice,
-            wifh_price_usd: wifhPriceUsd,
-            pool_rate: poolRate,
-          })
-        );
-      } catch (err: any) {
-        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ success: false, error: err.message }));
-      }
-    })();
-  } else if (req.url === '/api/swap' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => { body += chunk.toString(); });
-    req.on('end', async () => {
-      try {
-        const payload = JSON.parse(body || '{}');
-        const telegramId = Number(payload.telegram_id);
-        const mode = payload.mode;
-        const fromToken = String(payload.from || '').toLowerCase();
-        const toToken = String(payload.to || '').toLowerCase();
-        const amount = Number(payload.amount);
-
-        if (!telegramId || !amount || amount <= 0 || !['wifh', 'eth'].includes(fromToken) || !['wifh', 'eth'].includes(toToken)) {
-          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          return res.end(JSON.stringify({ success: false, error: 'Invalid swap payload parameters' }));
-        }
-
-        let result;
-        if (mode === 'treasury') {
-          if (!isAdmin(telegramId)) {
-            res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-            return res.end(JSON.stringify({ success: false, error: 'Unauthorized. Admins only.' }));
-          }
-          if (!treasurySigner) throw new Error('Treasury not configured');
-          result = await executeOnChainSwap(null, fromToken as 'eth' | 'wifh', toToken as 'eth' | 'wifh', amount, treasurySigner);
-        } else {
-          const userWallet = await getOrCreateWallet(telegramId);
-          result = await executeOnChainSwap(userWallet, fromToken as 'eth' | 'wifh', toToken as 'eth' | 'wifh', amount);
-        }
-
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ success: true, received: result.received, received_usd: result.receivedUsd, tx_hash: result.txHash }));
-      } catch (err: any) {
-        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ success: false, error: err.message }));
-      }
-    });
-  } else if (req.url?.startsWith('/public/')) {
-    const safePath = path.normalize(req.url).replace(/^(\.\.[\/\\])+/, '');
-    const filePath = path.join(process.cwd(), safePath);
-    if (fs.existsSync(filePath)) {
-      const ext = path.extname(filePath).toLowerCase();
-      let contentType = 'application/octet-stream';
-      if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
-      else if (ext === '.png') contentType = 'image/png';
-      else if (ext === '.gif') contentType = 'image/gif';
-      
-      res.writeHead(200, { 'Content-Type': contentType });
-      res.end(fs.readFileSync(filePath));
-    } else {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Not Found');
-    }
+// Admin Panel (/admin)
+app.get('/admin', (req, res) => {
+  const adminPath = path.join(process.cwd(), 'admin.html');
+  if (fs.existsSync(adminPath)) {
+    let html = fs.readFileSync(adminPath, 'utf8');
+    // Inject runtime Supabase credentials
+    html = html
+      .replace('__SUPABASE_URL__', process.env.SUPABASE_URL || '')
+      .replace('__SUPABASE_ANON_KEY__', process.env.SUPABASE_ANON_KEY || '');
+    res.setHeader('Content-Type', 'text/html');
+    return res.status(200).send(html);
   } else {
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('Not Found');
+    return res.status(404).send('Admin panel not found.');
   }
 });
 
-server.listen(port, () => {
+// Cache Refresh API
+app.get('/api/refresh-cache', async (req, res) => {
+  try {
+    await refreshTriggerCache();
+    return res.status(200).json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin Check API
+app.get('/api/is-admin', async (req, res) => {
+  try {
+    const telegramId = Number(req.query.telegram_id);
+    const adminCheck = telegramId > 0 && (await isAdmin(telegramId));
+    return res.status(200).json({ is_admin: adminCheck });
+  } catch {
+    return res.status(200).json({ is_admin: false });
+  }
+});
+
+// Balance API
+app.get('/api/balance', async (req, res) => {
+  try {
+    const telegramId = Number(req.query.telegram_id);
+    const mode = req.query.mode as string | undefined;
+
+    if (!telegramId) {
+      return res.status(400).json({ success: false, error: 'Missing or invalid telegram_id' });
+    }
+
+    let address = '';
+    if (mode === 'treasury') {
+      if (!isAdmin(telegramId)) {
+        return res.status(403).json({ success: false, error: 'Unauthorized. Admins only.' });
+      }
+      if (!treasurySigner) throw new Error('Treasury not configured');
+      address = treasurySigner.address;
+    } else {
+      const wallet = await getOrCreateWallet(telegramId);
+      address = wallet.public_address;
+    }
+
+    let ethBalance = '0.0000';
+    try {
+      const ethBalanceWei = await provider.getBalance(address);
+      ethBalance = parseFloat(ethers.formatEther(ethBalanceWei)).toFixed(4);
+    } catch (e: any) {
+      console.warn('RPC ETH balance error:', e.message);
+    }
+
+    let wifhBalance = '0.0';
+    if (WIFH_CONTRACT_ADDRESS) {
+      try {
+        const tokenContract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, provider);
+        const rawBalance = await tokenContract.balanceOf(address);
+        const decimals = await tokenContract.decimals();
+        wifhBalance = ethers.formatUnits(rawBalance, decimals);
+      } catch (e) {
+        wifhBalance = '0.0';
+      }
+    }
+
+    const ethPrice = await getEthPriceUsd();
+    const poolRate = await getPoolRate();
+    const wifhPriceUsd = (ethPrice / poolRate).toFixed(8);
+
+    return res.status(200).json({
+      success: true,
+      address: address,
+      eth_balance: ethBalance,
+      wifh_balance: wifhBalance,
+      eth_price_usd: ethPrice,
+      wifh_price_usd: wifhPriceUsd,
+      pool_rate: poolRate,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Swap API
+app.post('/api/swap', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const telegramId = Number(payload.telegram_id);
+    const mode = payload.mode;
+    const fromToken = String(payload.from || '').toLowerCase();
+    const toToken = String(payload.to || '').toLowerCase();
+    const amount = Number(payload.amount);
+
+    if (!telegramId || !amount || amount <= 0 || !['wifh', 'eth'].includes(fromToken) || !['wifh', 'eth'].includes(toToken)) {
+      return res.status(400).json({ success: false, error: 'Invalid swap payload parameters' });
+    }
+
+    let result;
+    if (mode === 'treasury') {
+      if (!isAdmin(telegramId)) {
+        return res.status(403).json({ success: false, error: 'Unauthorized. Admins only.' });
+      }
+      if (!treasurySigner) throw new Error('Treasury not configured');
+      result = await executeOnChainSwap(null, fromToken as 'eth' | 'wifh', toToken as 'eth' | 'wifh', amount, treasurySigner);
+    } else {
+      const userWallet = await getOrCreateWallet(telegramId);
+      result = await executeOnChainSwap(userWallet, fromToken as 'eth' | 'wifh', toToken as 'eth' | 'wifh', amount);
+    }
+
+    return res.status(200).json({
+      success: true,
+      received: result.received,
+      received_usd: result.receivedUsd,
+      tx_hash: result.txHash,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Static files in /public
+app.use('/public', express.static(path.join(process.cwd(), 'public')));
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).send('Not Found');
+});
+
+const server = app.listen(port, () => {
+  console.log(`[Express] HTTP server listening on port ${port} (Render keep-alive & WebApp)`);
 });
 // ==========================================
 // ==========================================
