@@ -2041,7 +2041,6 @@ interface TriviaSession {
 const activeTriviaGames = new Map<number, TriviaSession>();
 
 bot.command('stop_trivia', async (ctx) => {
-  if (ctx.chat.type === 'private') return ctx.reply('Trivia must be played in a group.');
   if (!isAdmin(ctx.from!.id)) return ctx.reply('⛔ Only admins can stop a trivia game.');
   
   const session = activeTriviaGames.get(ctx.chat.id);
@@ -2056,7 +2055,6 @@ bot.command('stop_trivia', async (ctx) => {
 });
 
 bot.command('start_trivia', async (ctx) => {
-  if (ctx.chat.type === 'private') return ctx.reply('Trivia must be played in a group.');
   if (!isAdmin(ctx.from!.id)) return ctx.reply('⛔ Only admins can start a trivia game.');
   
   if (activeTriviaGames.has(ctx.chat.id)) {
