@@ -1597,35 +1597,53 @@ bot.command('airdrop', async (ctx) => {
     }
 
     let destinationAddress = '';
+    let displayRecipient = targetInput;
     if ((ethers.isAddress as any)(targetInput)) {
       destinationAddress = targetInput;
+      displayRecipient = 'External Wallet';
     } else {
       const targetUser = await getTargetUser(ctx);
       if (!targetUser) return ctx.reply('\u274C Target user not found.');
       const wallet = await getOrCreateWallet(targetUser.id);
       destinationAddress = wallet.public_address;
+      displayRecipient = targetUser.username ? `@${targetUser.username}` : `User ${targetUser.id}`;
     }
     const statusMsg = await ctx.reply('\u23F3 Executing Treasury Airdrop on Robinhood Chain...');
     const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
-const decimals = await contract.decimals();
-// Convert total amount to smallest units (bigint)
-const totalUnits = ethers.parseUnits(tokenAmount.toString(), decimals);
-// Calculate 1% fee and user portion
-const { userAmount, feeAmount } = calculateAndRouteFee(totalUnits);
-// Transfer user portion
-const txUser = await contract.transfer(destinationAddress, userAmount);
-await txUser.wait();
-// Route fee to Dev Wallet (if any)
-if (feeAmount > 0n) {
-  await dispatchFeesToDevWallet(feeAmount, contract, treasurySigner);
-}
-return ctx.telegram.editMessageText(
-  ctx.chat.id,
-  statusMsg.message_id,
-  undefined,
-  `\u{1F389} *AIRDROP SUCCESSFUL!*\n\n\u{1F381} *Sent Amount:* \`${ethers.formatUnits(userAmount, decimals)} WIFH\`\n\u{1F4B0} *Fee (1%):* \`${ethers.formatUnits(feeAmount, decimals)} WIFH\`\n\u{1F4CD} *Recipient:* \`${destinationAddress}\`\n\u{1F517} *Tx Hash:* \`${txUser.hash}\``,
-  { parse_mode: 'Markdown' }
-);
+    const decimals = await contract.decimals();
+
+    // Calculate exact recipient amount and the additional 1% fee
+    const userAmount = ethers.parseUnits(tokenAmount.toString(), decimals);
+    const feeAmount = userAmount / BigInt(100); // 1%
+    const totalRequired = userAmount + feeAmount;
+
+    // Safety check: ensure treasury has enough to cover amount + fee
+    const treasuryBalance = await contract.balanceOf(treasurySigner.address);
+    if (treasuryBalance < totalRequired) {
+      return ctx.telegram.editMessageText(
+        ctx.chat.id,
+        statusMsg.message_id,
+        undefined,
+        `\u274C Airdrop failed: Insufficient Treasury balance. Required: ${ethers.formatUnits(totalRequired, decimals)} WIFH.`
+      );
+    }
+
+    // Transfer exact amount to user
+    const txUser = await contract.transfer(destinationAddress, userAmount);
+    await txUser.wait();
+
+    // Route fee to Dev Wallet (if any)
+    if (feeAmount > 0n) {
+      await dispatchFeesToDevWallet(feeAmount, contract, treasurySigner);
+    }
+
+    return ctx.telegram.editMessageText(
+      ctx.chat.id,
+      statusMsg.message_id,
+      undefined,
+      `🎉 AIRDROP SUCCESSFUL!\n\n👤 Recipient: ${displayRecipient}\n🎁 Sent Amount: ${tokenAmount} WIFH\n🐾 The Hood has delivered!\n🔗 Tx Hash: \`${txUser.hash}\``,
+      { parse_mode: 'Markdown' }
+    );
   } catch (err: any) {
     return ctx.reply(`\u274C Airdrop failed: ${err.message}`);
   }
