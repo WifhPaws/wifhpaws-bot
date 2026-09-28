@@ -10,7 +10,11 @@ export interface TriviaQuestion {
 
 /** Fetch 10 multiple‑choice trivia questions from Open Trivia DB */
 export const fetchTriviaBatch = async (): Promise<TriviaQuestion[]> => {
-  const response = await fetch('https://opentdb.com/api.php?amount=10&type=multiple');
+  const categories = [27, 28, 11, 12, 14];
+  const selectedCategory = categories[Math.floor(Math.random() * categories.length)];
+  const response = await fetch(
+    `https://opentdb.com/api.php?amount=10&category=${selectedCategory}&difficulty=easy&type=multiple`
+  );
   if (!response.ok) {
     throw new Error(`Trivia API request failed: ${response.status}`);
   }
