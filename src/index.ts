@@ -2103,12 +2103,21 @@ interface TriviaSession {
   chatId: number;
   questions: any[];
   currentIdx: number;
-  scores: Record<number, { name: string, score: number, wallet: string }>;
+  scores: Record<number, { name: string, score: number, wallet: string, userId: number }>;
   guessedUsers: Set<number>;
   messageId?: number;
   timer?: NodeJS.Timeout;
 }
 const activeTriviaGames = new Map<number, TriviaSession>();
+
+interface PendingWinner {
+  place: number;
+  userId: number;
+  name: string;
+  wallet: string;
+}
+
+const pendingTriviaWinners = new Map<number, PendingWinner[]>();
 
 bot.command('stop_trivia', async (ctx) => {
   if (!isAdmin(ctx.from!.id)) return ctx.reply('⛔ Only admins can stop a trivia game.');
@@ -2144,7 +2153,7 @@ bot.command('start_trivia', async (ctx) => {
     };
     activeTriviaGames.set(ctx.chat.id, session);
 
-    await ctx.reply(`🧠 *Trivia Game Started!* 🧠\n\nThere are ${questions.length} questions. The top 3 players will win WIFH prizes based on the current payout settings!\n\nGet ready...`, { parse_mode: 'Markdown' });
+    await ctx.reply(`🧠 *Trivia Game Started!* 🧠\n\nThere are ${questions.length} questions. Top players will earn trivia rewards!\n\nGet ready...`, { parse_mode: 'Markdown' });
     
     setTimeout(() => sendNextTriviaQuestion(ctx), 3000);
   } catch (err: any) {
@@ -2209,7 +2218,8 @@ bot.action(/tq_(\d+)/, async (ctx) => {
       session.scores[userId] = {
         name: ctx.from!.username ? `@${ctx.from!.username}` : (ctx.from!.first_name || 'Player'),
         score: 0,
-        wallet: dbUser?.wallet_address || ''
+        wallet: dbUser?.wallet_address || '',
+        userId: userId
       };
     }
     session.scores[userId].score += 1;
@@ -2247,29 +2257,142 @@ async function endTriviaGame(ctx: any) {
 
   await ctx.reply(text, { parse_mode: 'Markdown' });
 
-  try {
-    const config = await getPayoutConfig();
-    const winners = [];
-    if (players[0] && players[0].wallet) winners.push({ place: 1, wallet: players[0].wallet, name: players[0].name });
-    if (players[1] && players[1].wallet) winners.push({ place: 2, wallet: players[1].wallet, name: players[1].name });
-    if (players[2] && players[2].wallet) winners.push({ place: 3, wallet: players[2].wallet, name: players[2].name });
+  // Store top 3 winners as pending for admin payout command (/payout_trivia)
+  const pending: PendingWinner[] = [];
+  players.slice(0, 3).forEach((p, idx) => {
+    pending.push({
+      place: idx + 1,
+      userId: p.userId || 0,
+      name: p.name,
+      wallet: p.wallet,
+    });
+  });
 
-    if (winners.length > 0) {
-      await airdropToWinners(winners, config);
-      let airdropText = `💸 *Airdrop Initiated for Top Players!*\n\n`;
-      winners.forEach(w => {
-        const amt = w.place === 1 ? config.first : (w.place === 2 ? config.second : config.third);
-        if (amt > 0) airdropText += `• ${w.name} receives *${amt} WIFH*\n`;
-      });
-      await ctx.reply(airdropText, { parse_mode: 'Markdown' });
-    } else {
-      await ctx.reply('⚠️ *No winners had registered wallets.* Remind players to link their wallets via `/start wallet` in DM to receive airdrops!');
-    }
-  } catch (err: any) {
-    console.error('Error during trivia payout:', err);
-    await ctx.reply('⚠️ Error processing trivia payouts.');
-  }
+  pendingTriviaWinners.set(ctx.chat.id, pending);
+
+  let pendingText = `🏆 *Pending Trivia Winners Recorded!*\n\n`;
+  pending.forEach((w) => {
+    const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
+    const walletText = w.wallet ? `(\`${w.wallet.substring(0, 6)}...${w.wallet.substring(w.wallet.length - 4)}\`)` : '(_No wallet linked_)';
+    pendingText += `${medal} *${w.place} Place:* ${w.name} ${walletText}\n`;
+  });
+  pendingText += `\n*Admins:* Distribute rewards using:\n\`/payout_trivia <1st_amount> [2nd_amount] [3rd_amount]\`\n_(e.g., \`/payout_trivia 100 50 25\`)_\n\nOr dismiss this round using \`/skip_payout\`.`;
+
+  await ctx.reply(pendingText, { parse_mode: 'Markdown' });
 }
+
+// Command: /payout_trivia <1st_amount> [2nd_amount] [3rd_amount]
+bot.command(['payout_trivia', `payout_trivia@${BOT_USERNAME}`], async (ctx) => {
+  const senderId = ctx.from?.id;
+  if (!senderId || (!isAdmin(senderId) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
+    return ctx.reply('⛔ Unauthorized. Only admins can execute trivia payouts.');
+  }
+
+  const pending = pendingTriviaWinners.get(ctx.chat.id);
+  if (!pending || pending.length === 0) {
+    return ctx.reply('⚠️ No pending trivia winners found for this chat. Run a trivia game first with `/start_trivia`.', { parse_mode: 'Markdown' });
+  }
+
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 2) {
+    return ctx.reply('⚠️ *Usage:* `/payout_trivia <1st_place_amount> [2nd_place_amount] [3rd_place_amount]`\n\n*Example:* `/payout_trivia 100 50 25`', { parse_mode: 'Markdown' });
+  }
+
+  const amounts: number[] = [];
+  for (let i = 1; i < args.length && i <= 3; i++) {
+    const val = Number(args[i]);
+    if (!Number.isFinite(val) || val <= 0) {
+      return ctx.reply(`❌ Invalid amount '${args[i]}'. Please enter positive numerical amounts.`);
+    }
+    amounts.push(val);
+  }
+
+  const statusMsg = await ctx.reply('⏳ Processing trivia payouts from Treasury...');
+
+  try {
+    const receiptLines: string[] = [];
+    const pConfig: PayoutConfig = {
+      first: amounts[0] || 0,
+      second: amounts[1] || 0,
+      third: amounts[2] || 0,
+    };
+
+    if (treasurySigner && WIFH_CONTRACT_ADDRESS) {
+      const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
+      const decimals = await contract.decimals();
+
+      for (let i = 0; i < pending.length && i < amounts.length; i++) {
+        const winner = pending[i];
+        const tokenAmount = amounts[i];
+        if (tokenAmount <= 0) continue;
+
+        const medal = winner.place === 1 ? '🥇' : (winner.place === 2 ? '🥈' : '🥉');
+
+        if (winner.wallet && ethers.isAddress(winner.wallet)) {
+          const userAmount = ethers.parseUnits(tokenAmount.toString(), decimals);
+          const feeAmount = userAmount / BigInt(100);
+          const totalRequired = userAmount + feeAmount;
+
+          const treasuryBalance = await contract.balanceOf(treasurySigner.address);
+          if (treasuryBalance >= totalRequired) {
+            const txUser = await contract.transfer(winner.wallet, userAmount);
+            await txUser.wait();
+            if (feeAmount > 0n) {
+              await dispatchFeesToDevWallet(feeAmount, contract, treasurySigner);
+            }
+            receiptLines.push(`${medal} ${winner.name}: *${tokenAmount} WIFH*`);
+          } else {
+            receiptLines.push(`${medal} ${winner.name}: *${tokenAmount} WIFH* (⚠️ Insufficient Treasury Balance)`);
+          }
+        } else {
+          receiptLines.push(`${medal} ${winner.name}: *${tokenAmount} WIFH* (⚠️ No Wallet Linked)`);
+        }
+      }
+    } else {
+      await airdropToWinners(pending, pConfig);
+      pending.forEach((w, idx) => {
+        const amt = amounts[idx] || 0;
+        if (amt > 0) {
+          const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
+          receiptLines.push(`${medal} ${w.name}: *${amt} WIFH*`);
+        }
+      });
+    }
+
+    pendingTriviaWinners.delete(ctx.chat.id);
+
+    const receiptText =
+      `🎉 *AIRDROP / TRIVIA PAYOUT SUCCESSFUL!*\n\n` +
+      receiptLines.join('\n') +
+      `\n\n🐾 *The Hood has delivered!*`;
+
+    return ctx.telegram.editMessageText(
+      ctx.chat.id,
+      statusMsg.message_id,
+      undefined,
+      receiptText,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    console.error('[Trivia Payout Error]:', err);
+    return ctx.reply('❌ Payout failed. Please check treasury balance and try again.');
+  }
+});
+
+// Command: /skip_payout
+bot.command(['skip_payout', `skip_payout@${BOT_USERNAME}`], async (ctx) => {
+  const senderId = ctx.from?.id;
+  if (!senderId || (!isAdmin(senderId) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
+    return ctx.reply('⛔ Unauthorized.');
+  }
+
+  if (!pendingTriviaWinners.has(ctx.chat.id)) {
+    return ctx.reply('ℹ️ No pending trivia payout found for this chat.');
+  }
+
+  pendingTriviaWinners.delete(ctx.chat.id);
+  return ctx.reply('🗑️ *Pending trivia payout cleared.* No rewards were distributed for this round.', { parse_mode: 'Markdown' });
+});
 
 // Launch Bot with Exponential Backoff Retry Logic
 async function launchBotWithRetry(maxRetries = 5, initialDelayMs = 3000) {
@@ -2288,7 +2411,9 @@ async function launchBotWithRetry(maxRetries = 5, initialDelayMs = 3000) {
         { command: 'buy', description: 'Buy WIFH with ETH' },
         { command: 'sell', description: 'Sell WIFH for ETH' },
         { command: 'admin', description: 'Open Admin & Dev Control Panel (Admins)' },
-        { command: 'devpanel', description: 'Open Developer & Liquidity Control Panel (Admins)' }
+        { command: 'devpanel', description: 'Open Developer & Liquidity Control Panel (Admins)' },
+        { command: 'payout_trivia', description: 'Distribute pending trivia rewards (Admins)' },
+        { command: 'skip_payout', description: 'Dismiss pending trivia rewards (Admins)' }
       ]).catch(err => console.error('Failed to set commands menu:', err));
 
       return;
