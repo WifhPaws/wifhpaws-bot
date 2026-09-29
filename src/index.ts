@@ -2305,17 +2305,47 @@ bot.command(['payout_trivia', `payout_trivia@${BOT_USERNAME}`], async (ctx) => {
   }
 
   const args = ctx.message.text.split(' ').filter(Boolean);
-  if (args.length < 2) {
-    return ctx.reply('⚠️ *Usage:* `/payout_trivia <1st_place_amount> [2nd_place_amount] [3rd_place_amount]`\n\n*Example:* `/payout_trivia 100 50 25`', { parse_mode: 'Markdown' });
-  }
 
-  const amounts: number[] = [];
-  for (let i = 1; i < args.length && i <= 3; i++) {
-    const val = Number(args[i]);
-    if (!Number.isFinite(val) || val <= 0) {
-      return ctx.reply(`❌ Invalid amount '${args[i]}'. Please enter positive numerical amounts.`);
+  let amounts: number[] = [];
+
+  if (args.length >= 2) {
+    // Explicit amounts provided by admin
+    for (let i = 1; i < args.length && i <= 3; i++) {
+      const val = Number(args[i]);
+      if (!Number.isFinite(val) || val <= 0) {
+        return ctx.reply(`❌ Invalid amount '${args[i]}'. Please enter positive numerical amounts.`);
+      }
+      amounts.push(val);
     }
-    amounts.push(val);
+  } else {
+    // No arguments – fall back to Trivia Config Panel defaults
+    try {
+      const cfg = await getPayoutConfig();
+      if (cfg.first > 0) amounts.push(cfg.first);
+      if (cfg.second > 0) amounts.push(cfg.second);
+      if (cfg.third > 0) amounts.push(cfg.third);
+    } catch (cfgErr: any) {
+      console.error('[Payout Config Fetch Error]:', cfgErr?.message || cfgErr);
+    }
+
+    if (amounts.length === 0) {
+      return ctx.reply(
+        '⚠️ *No reward amounts specified and no defaults configured.*\n\n' +
+        'Please specify amounts manually:\n' +
+        '`/payout_trivia <1st> [2nd] [3rd]`\n\n' +
+        '_Or set default rewards in the Admin Panel → 🎮 Trivia Settings._',
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    // Notify admin that config defaults are being used
+    await ctx.reply(
+      `ℹ️ *Using Trivia Config Panel defaults:*\n` +
+      `🥇 1st: ${amounts[0] || 0} WIFH` +
+      (amounts[1] ? ` | 🥈 2nd: ${amounts[1]} WIFH` : '') +
+      (amounts[2] ? ` | 🥉 3rd: ${amounts[2]} WIFH` : ''),
+      { parse_mode: 'Markdown' }
+    );
   }
 
   const statusMsg = await ctx.reply('⏳ Processing trivia payouts from Treasury...');
