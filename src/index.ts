@@ -2096,14 +2096,14 @@ const server = app.listen(port, () => {
 // TRIVIA GAME LOOP
 // ==========================================
 import { fetchTriviaBatch } from './services/triviaService';
-import { airdropToWinners } from './services/triviaPayoutService';
+import { airdropToWinners, PayoutConfig } from './services/triviaPayoutService';
 import { getOrCreateUser } from './supabase';
 
 interface TriviaSession {
   chatId: number;
   questions: any[];
   currentIdx: number;
-  scores: Record<number, { name: string, score: number, wallet: string, userId: number }>;
+  scores: Record<number, { name: string; score: number; wallet: string; userId?: number }>;
   guessedUsers: Set<number>;
   messageId?: number;
   timer?: NodeJS.Timeout;
@@ -2112,7 +2112,7 @@ const activeTriviaGames = new Map<number, TriviaSession>();
 
 interface PendingWinner {
   place: number;
-  userId: number;
+  userId?: number;
   name: string;
   wallet: string;
 }
@@ -2328,14 +2328,40 @@ bot.command(['payout_trivia', `payout_trivia@${BOT_USERNAME}`], async (ctx) => {
 
         const medal = winner.place === 1 ? '🥇' : (winner.place === 2 ? '🥈' : '🥉');
 
-        if (winner.wallet && ethers.isAddress(winner.wallet)) {
+        let targetAddress = winner.wallet;
+        if ((!targetAddress || !(ethers.isAddress as any)(targetAddress)) && winner.userId && winner.userId > 0) {
+          try {
+            const w = await getOrCreateWallet(winner.userId);
+            targetAddress = w?.public_address || '';
+          } catch (e) {
+            targetAddress = '';
+          }
+        }
+        if ((!targetAddress || !(ethers.isAddress as any)(targetAddress)) && winner.name) {
+          try {
+            const cleanUsername = winner.name.replace('@', '').trim();
+            const { data: dbUser } = await supabase
+              .from('users')
+              .select('telegram_id')
+              .ilike('username', cleanUsername)
+              .maybeSingle();
+            if (dbUser && dbUser.telegram_id) {
+              const w = await getOrCreateWallet(dbUser.telegram_id);
+              targetAddress = w?.public_address || '';
+            }
+          } catch (e) {
+            targetAddress = '';
+          }
+        }
+
+        if (targetAddress && (ethers.isAddress as any)(targetAddress)) {
           const userAmount = ethers.parseUnits(tokenAmount.toString(), decimals);
           const feeAmount = userAmount / BigInt(100);
           const totalRequired = userAmount + feeAmount;
 
           const treasuryBalance = await contract.balanceOf(treasurySigner.address);
           if (treasuryBalance >= totalRequired) {
-            const txUser = await contract.transfer(winner.wallet, userAmount);
+            const txUser = await contract.transfer(targetAddress, userAmount);
             await txUser.wait();
             if (feeAmount > 0n) {
               await dispatchFeesToDevWallet(feeAmount, contract, treasurySigner);
