@@ -2324,7 +2324,7 @@ async function endTriviaGame(ctx: any) {
         }
         pendingText += `${medal} *${w.place} Place:* ${w.name} ${walletText}\n`;
       });
-      pendingText += `\n*Admins:* Use \`/payout\` to view rewards, or distribute with:\n\`/payout_trivia <1st> [2nd] [3rd]\`\n_(e.g., \`/payout_trivia 100 50 25\`)_\n\nOr dismiss this round using \`/skip_payout\`.`;
+      pendingText += `\n✅ *Ready to distribute!*`;
 
       await ctx.reply(pendingText, { parse_mode: 'Markdown' });
     }
@@ -2365,13 +2365,9 @@ bot.command(['payout', `payout@${BOT_USERNAME}`], async (ctx) => {
         }
         text += `${medal} ${w.name} — ${walletText}\n`;
       });
-      text += `\n✅ *Ready to distribute!*\n`;
-      text += `Use \`/payout_trivia\` (uses config defaults) or\n`;
-      text += `\`/payout_trivia 100 50 25\` (custom amounts).\n`;
-      text += `Use \`/skip_payout\` to dismiss.`;
+      text += `\n✅ *Ready to distribute!*`;
     } else {
-      text += `ℹ️ _No pending trivia winners in this chat._\n`;
-      text += `Run \`/start_trivia\` to begin a game.`;
+      text += `ℹ️ _No pending trivia winners in this chat._`;
     }
 
     return ctx.reply(text, { parse_mode: 'Markdown' });
