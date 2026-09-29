@@ -906,6 +906,9 @@ bot.action('admin_trivia', async (ctx) => {
       `• \`/start_trivia\` — Start a 10-question trivia game in any group.\n` +
       `• \`/stop_trivia\` — Stop an active trivia game early.\n` +
       `• \`/setpayout <1st> <2nd> <3rd>\` — Update the payout rewards.\n` +
+      `• \`/payout\` — View current reward config & pending winners.\n` +
+      `• \`/payout_trivia [amounts]\` — Distribute pending rewards.\n` +
+      `• \`/skip_payout\` — Dismiss pending rewards without paying.\n\n` +
       `_Example:_ \`/setpayout 100 50 25\``;
 
     const keyboard = [
@@ -2236,36 +2239,64 @@ bot.action(/tq_(\d+)/, async (ctx) => {
 });
 
 async function endTriviaGame(ctx: any) {
-  try {
-    const session = activeTriviaGames.get(ctx.chat.id);
-    if (!session) return;
-    activeTriviaGames.delete(ctx.chat.id);
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
 
-    const scoreEntries = Object.entries(session.scores);
-    if (scoreEntries.length === 0) {
-      return ctx.reply('🏁 *Trivia Finished!*\n\nNobody scored any points! 😢', { parse_mode: 'Markdown' });
+  // ── Phase 1: Extract session and clean up ──
+  const session = activeTriviaGames.get(chatId);
+  if (!session) return;
+  activeTriviaGames.delete(chatId);
+
+  const scoreEntries = Object.entries(session.scores);
+
+  // Edge-case: nobody answered correctly
+  if (!scoreEntries || scoreEntries.length === 0) {
+    try {
+      await ctx.reply('🏁 *Trivia Finished!*\n\nNobody scored any points! 😢', { parse_mode: 'Markdown' });
+    } catch (msgErr: any) {
+      console.error('[endTriviaGame] Failed to send empty-scores message:', msgErr?.message || msgErr);
     }
+    return;
+  }
 
-    const sortedScores = scoreEntries
+  // ── Phase 2: Sort scores & build winner cache ──
+  let sortedScores: Array<{ keyUserId: number; name: string; score: number; wallet: string; userId?: number }> = [];
+  const pending: PendingWinner[] = [];
+
+  try {
+    sortedScores = scoreEntries
       .map(([keyIdStr, item]) => ({
-        keyUserId: Number(keyIdStr),
-        ...item,
+        keyUserId: Number(keyIdStr) || 0,
+        name: item?.name || 'Player',
+        score: item?.score || 0,
+        wallet: item?.wallet || '',
+        userId: item?.userId,
       }))
       .sort((a, b) => b.score - a.score);
 
-    const pending: PendingWinner[] = [];
     sortedScores.slice(0, 3).forEach((p, idx) => {
       pending.push({
         place: idx + 1,
         userId: p.userId && p.userId > 0 ? p.userId : (p.keyUserId || 0),
         name: p.name || 'Player',
-        wallet: p.wallet || '',
+        wallet: typeof p.wallet === 'string' ? p.wallet : '',
       });
     });
+  } catch (sortErr: any) {
+    console.error('[endTriviaGame] Error sorting scores / building winners:', sortErr?.message || sortErr);
+  }
 
-    // Ensure pendingTriviaWinners is set before sending messages
-    pendingTriviaWinners.set(ctx.chat.id, pending);
+  // ── Phase 3: Cache pending winners (must succeed before messages) ──
+  try {
+    if (pending.length > 0) {
+      pendingTriviaWinners.set(chatId, pending);
+    }
+  } catch (cacheErr: any) {
+    console.error('[endTriviaGame] Error caching pendingTriviaWinners:', cacheErr?.message || cacheErr);
+  }
 
+  // ── Phase 4: Send final leaderboard ──
+  try {
     let text = '🏁 *Trivia Finished! Here are the final scores:*\n\n';
     sortedScores.forEach((p, idx) => {
       let medal = '';
@@ -2274,23 +2305,81 @@ async function endTriviaGame(ctx: any) {
       else if (idx === 2) medal = '🥉';
       text += `${medal ? medal + ' ' : ''}${idx + 1}. ${p.name} - ${p.score} pts\n`;
     });
-
     await ctx.reply(text, { parse_mode: 'Markdown' });
+  } catch (leaderErr: any) {
+    console.error('[endTriviaGame] Error sending leaderboard:', leaderErr?.message || leaderErr);
+  }
 
-    let pendingText = `🏆 *Pending Trivia Winners Recorded!*\n\n`;
-    pending.forEach((w) => {
-      const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
-      const walletText = w.wallet ? `(\`${w.wallet.substring(0, 6)}...${w.wallet.substring(w.wallet.length - 4)}\`)` : '(_No wallet linked_)';
-      pendingText += `${medal} *${w.place} Place:* ${w.name} ${walletText}\n`;
-    });
-    pendingText += `\n*Admins:* Distribute rewards using:\n\`/payout_trivia <1st_amount> [2nd_amount] [3rd_amount]\`\n_(e.g., \`/payout_trivia 100 50 25\`)_\n\nOr dismiss this round using \`/skip_payout\`.`;
+  // ── Phase 5: Send pending-winners notification ──
+  try {
+    if (pending.length > 0) {
+      let pendingText = `🏆 *Pending Trivia Winners Recorded!*\n\n`;
+      pending.forEach((w) => {
+        const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
+        let walletText = '(_No wallet linked_)';
+        if (w.wallet && w.wallet.length >= 10) {
+          walletText = `(\`${w.wallet.substring(0, 6)}...${w.wallet.substring(w.wallet.length - 4)}\`)`;
+        } else if (w.wallet) {
+          walletText = `(\`${w.wallet}\`)`;
+        }
+        pendingText += `${medal} *${w.place} Place:* ${w.name} ${walletText}\n`;
+      });
+      pendingText += `\n*Admins:* Use \`/payout\` to view rewards, or distribute with:\n\`/payout_trivia <1st> [2nd] [3rd]\`\n_(e.g., \`/payout_trivia 100 50 25\`)_\n\nOr dismiss this round using \`/skip_payout\`.`;
 
-    await ctx.reply(pendingText, { parse_mode: 'Markdown' });
-  } catch (err: any) {
-    console.error('[endTriviaGame Error]:', err);
-    await ctx.reply('⚠️ Error finishing trivia game or recording winners.');
+      await ctx.reply(pendingText, { parse_mode: 'Markdown' });
+    }
+  } catch (notifyErr: any) {
+    console.error('[endTriviaGame] Error sending pending-winners notification:', notifyErr?.message || notifyErr);
   }
 }
+
+// Command: /payout — View current reward config & pending winners
+bot.command(['payout', `payout@${BOT_USERNAME}`], async (ctx) => {
+  const senderId = ctx.from?.id;
+  if (!senderId || (!isAdmin(senderId) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
+    return ctx.reply('⛔ Unauthorized. Only admins can view payout details.');
+  }
+
+  try {
+    const cfg = await getPayoutConfig();
+    const pending = pendingTriviaWinners.get(ctx.chat.id);
+
+    let text = `💰 *Trivia Payout Dashboard*\n\n`;
+
+    // Current config
+    text += `🏆 *Configured Rewards (per game):*\n`;
+    text += `🥇 1st Place: *${cfg.first} WIFH*\n`;
+    text += `🥈 2nd Place: *${cfg.second} WIFH*\n`;
+    text += `🥉 3rd Place: *${cfg.third} WIFH*\n\n`;
+
+    // Pending winners
+    if (pending && pending.length > 0) {
+      text += `⏳ *Pending Winners (this chat):*\n`;
+      pending.forEach((w) => {
+        const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
+        let walletText = '_No wallet_';
+        if (w.wallet && w.wallet.length >= 10) {
+          walletText = `\`${w.wallet.substring(0, 6)}...${w.wallet.substring(w.wallet.length - 4)}\``;
+        } else if (w.wallet) {
+          walletText = `\`${w.wallet}\``;
+        }
+        text += `${medal} ${w.name} — ${walletText}\n`;
+      });
+      text += `\n✅ *Ready to distribute!*\n`;
+      text += `Use \`/payout_trivia\` (uses config defaults) or\n`;
+      text += `\`/payout_trivia 100 50 25\` (custom amounts).\n`;
+      text += `Use \`/skip_payout\` to dismiss.`;
+    } else {
+      text += `ℹ️ _No pending trivia winners in this chat._\n`;
+      text += `Run \`/start_trivia\` to begin a game.`;
+    }
+
+    return ctx.reply(text, { parse_mode: 'Markdown' });
+  } catch (err: any) {
+    console.error('[/payout Error]:', err?.message || err);
+    return ctx.reply('❌ Failed to load payout information. Please try again.');
+  }
+});
 
 // Command: /payout_trivia <1st_amount> [2nd_amount] [3rd_amount]
 bot.command(['payout_trivia', `payout_trivia@${BOT_USERNAME}`], async (ctx) => {
@@ -2479,6 +2568,7 @@ async function launchBotWithRetry(maxRetries = 5, initialDelayMs = 3000) {
         { command: 'sell', description: 'Sell WIFH for ETH' },
         { command: 'admin', description: 'Open Admin & Dev Control Panel (Admins)' },
         { command: 'devpanel', description: 'Open Developer & Liquidity Control Panel (Admins)' },
+        { command: 'payout', description: 'View trivia reward config & pending winners (Admins)' },
         { command: 'payout_trivia', description: 'Distribute pending trivia rewards (Admins)' },
         { command: 'skip_payout', description: 'Dismiss pending trivia rewards (Admins)' }
       ]).catch(err => console.error('Failed to set commands menu:', err));
