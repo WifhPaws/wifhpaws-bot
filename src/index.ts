@@ -782,8 +782,11 @@ bot.action('action_list_triggers', async (ctx) => {
 });
 
 
-// ⚠️ Only these Telegram user IDs can access Dev Options — hardcoded for security
-const DEV_PANEL_ALLOWED_IDS = [ 6078125076 ];
+// ⚠️ Allowed Telegram user IDs for Dev Options parsed dynamically from environment variable
+const DEV_PANEL_ALLOWED_IDS = (process.env.DEV_PANEL_ALLOWED_IDS || '')
+  .split(',')
+  .map((id) => Number(id.trim()))
+  .filter((id) => Number.isFinite(id) && id > 0);
 
 // ─── Reusable Admin Panel Renderer ───────────────────────────────────────────
 async function sendAdminPanel(ctx: any) {
@@ -1017,7 +1020,8 @@ bot.command(['send', `send@${BOT_USERNAME}`], async (ctx) => {
   const amountStr = args[1];
   const tokenType = args[2].toLowerCase();
   const recipientInput: string = String(args[3] || '');
-  if (isNaN(Number(amountStr)) || Number(amountStr) <= 0) return ctx.reply('\u274C Please enter a valid positive amount.');
+  const amountVal = Number(amountStr);
+  if (!Number.isFinite(amountVal) || amountVal <= 0) return ctx.reply('\u274C Please enter a valid positive numerical amount.');
 
   try {
     const senderData = await getOrCreateWallet(ctx.from.id);
@@ -1109,7 +1113,8 @@ bot.command('tsend', async (ctx) => {
   const amountStr = args[1];
   const tokenType = args[2].toLowerCase();
   const recipientInput: string = String(args[3] || '');
-  if (isNaN(Number(amountStr)) || Number(amountStr) <= 0) return ctx.reply('❌ Please enter a valid positive amount.');
+  const amountVal = Number(amountStr);
+  if (!Number.isFinite(amountVal) || amountVal <= 0) return ctx.reply('❌ Please enter a valid positive numerical amount.');
 
   try {
     let destinationAddress = '';
@@ -1177,9 +1182,9 @@ bot.command('swap', async (ctx) => {
   const amountStr = args[1];
   const fromToken = args[2].toLowerCase();
   const toToken = args[3].toLowerCase();
-  const amount = parseFloat(amountStr);
+  const amount = Number(amountStr);
 
-  if (isNaN(amount) || amount <= 0) return ctx.reply('\u274C Please enter a valid positive swap amount.');
+  if (!Number.isFinite(amount) || amount <= 0) return ctx.reply('\u274C Please enter a valid positive numerical swap amount.');
 
   if (!['wifh', 'eth'].includes(fromToken) || !['wifh', 'eth'].includes(toToken) || fromToken === toToken) {
     return ctx.reply('\u274C Invalid swap pair. Supported pairs are `wifh` ↔ `eth`.');
@@ -1246,9 +1251,9 @@ bot.command('tswap', async (ctx) => {
   const amountStr = args[1];
   const fromToken = args[2].toLowerCase();
   const toToken = args[3].toLowerCase();
-  const amount = parseFloat(amountStr);
+  const amount = Number(amountStr);
 
-  if (isNaN(amount) || amount <= 0) return ctx.reply('❌ Please enter a valid positive swap amount.');
+  if (!Number.isFinite(amount) || amount <= 0) return ctx.reply('❌ Please enter a valid positive numerical swap amount.');
 
   if (!['wifh', 'eth'].includes(fromToken) || !['wifh', 'eth'].includes(toToken) || fromToken === toToken) {
     return ctx.reply('❌ Invalid swap pair. Supported pairs are `wifh` ↔ `eth`.');
@@ -1315,7 +1320,8 @@ bot.command('dsend', async (ctx) => {
   const amountStr = args[1];
   const tokenType = args[2].toLowerCase();
   const recipientInput: string = String(args[3] || '');
-  if (isNaN(Number(amountStr)) || Number(amountStr) <= 0) return ctx.reply('❌ Please enter a valid positive amount.');
+  const amountVal = Number(amountStr);
+  if (!Number.isFinite(amountVal) || amountVal <= 0) return ctx.reply('❌ Please enter a valid positive numerical amount.');
 
   try {
     let destinationAddress = '';
@@ -1382,9 +1388,9 @@ bot.command('dswap', async (ctx) => {
   const amountStr = args[1];
   const fromToken = args[2].toLowerCase();
   const toToken = args[3].toLowerCase();
-  const amount = parseFloat(amountStr);
+  const amount = Number(amountStr);
 
-  if (isNaN(amount) || amount <= 0) return ctx.reply('❌ Please enter a valid positive swap amount.');
+  if (!Number.isFinite(amount) || amount <= 0) return ctx.reply('❌ Please enter a valid positive numerical swap amount.');
   if (!['wifh', 'eth'].includes(fromToken) || !['wifh', 'eth'].includes(toToken) || fromToken === toToken) {
     return ctx.reply('❌ Invalid swap pair. Supported pairs are `wifh` ↔ `eth`.');
   }
@@ -1586,9 +1592,9 @@ bot.command('airdrop', async (ctx) => {
   const targetInput: string = String(args[1] || '');
   let rawAmountStr = args[2].trim();
   let isDollar = rawAmountStr.includes('$');
-  let rawValue = parseFloat(rawAmountStr.replace('$', ''));
+  let rawValue = Number(rawAmountStr.replace('$', ''));
 
-  if (isNaN(rawValue) || rawValue <= 0) return ctx.reply('\u274C Invalid airdrop amount.');
+  if (!Number.isFinite(rawValue) || rawValue <= 0) return ctx.reply('\u274C Invalid airdrop amount.');
 
   try {
     let tokenAmount = rawValue;
@@ -1847,16 +1853,56 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// CORS & Preflight Handling
+// CORS & Preflight Handling (Restricted Origins)
+const ALLOWED_ORIGINS = [
+  process.env.WEBAPP_URL?.replace(/\/$/, ''),
+  'https://wifhpaws-bot.onrender.com',
+].filter(Boolean) as string[];
+
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (origin && (ALLOWED_ORIGINS.includes(origin) || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (process.env.WEBAPP_URL) {
+    res.header('Access-Control-Allow-Origin', process.env.WEBAPP_URL);
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-telegram-init-data');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
   next();
 });
+
+// Helper: Telegram WebApp HMAC SHA-256 Authentication
+function validateTelegramInitData(initDataString: string, botToken: string): { valid: boolean; user?: any } {
+  if (!initDataString || !botToken) return { valid: false };
+  try {
+    const urlParams = new URLSearchParams(initDataString);
+    const hash = urlParams.get('hash');
+    if (!hash) return { valid: false };
+    urlParams.delete('hash');
+
+    const params: string[] = [];
+    urlParams.forEach((val, key) => {
+      params.push(`${key}=${val}`);
+    });
+    params.sort();
+    const dataCheckString = params.join('\n');
+
+    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+    const calculatedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+
+    if (calculatedHash === hash) {
+      const userStr = urlParams.get('user');
+      const user = userStr ? JSON.parse(userStr) : undefined;
+      return { valid: true, user };
+    }
+  } catch (err) {
+    console.error('[HMAC Auth Error]', err);
+  }
+  return { valid: false };
+}
 
 app.get('/ping', (req, res) => {
   res.send('OK');
@@ -1902,7 +1948,8 @@ app.get('/api/refresh-cache', async (req, res) => {
     await refreshTriggerCache();
     return res.status(200).json({ success: true });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    console.error('[API Error /refresh-cache]:', err);
+    return res.status(500).json({ success: false, error: 'Failed to refresh cache. Please try again.' });
   }
 });
 
@@ -1912,7 +1959,8 @@ app.get('/api/is-admin', async (req, res) => {
     const telegramId = Number(req.query.telegram_id);
     const adminCheck = telegramId > 0 && (await isAdmin(telegramId));
     return res.status(200).json({ is_admin: adminCheck });
-  } catch {
+  } catch (err) {
+    console.error('[API Error /is-admin]:', err);
     return res.status(200).json({ is_admin: false });
   }
 });
@@ -1923,8 +1971,16 @@ app.get('/api/balance', async (req, res) => {
     const telegramId = Number(req.query.telegram_id);
     const mode = req.query.mode as string | undefined;
 
-    if (!telegramId) {
+    if (!telegramId || !Number.isFinite(telegramId) || telegramId <= 0) {
       return res.status(400).json({ success: false, error: 'Missing or invalid telegram_id' });
+    }
+
+    const initData = (req.headers['x-telegram-init-data'] || req.query.initData) as string | undefined;
+    if (initData && BOT_TOKEN) {
+      const auth = validateTelegramInitData(initData, BOT_TOKEN);
+      if (!auth.valid || (auth.user && auth.user.id !== telegramId)) {
+        return res.status(401).json({ success: false, error: 'Unauthorized Telegram WebApp session' });
+      }
     }
 
     let address = '';
@@ -1973,7 +2029,8 @@ app.get('/api/balance', async (req, res) => {
       pool_rate: poolRate,
     });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    console.error('[API Error /balance]:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve balance. Please try again.' });
   }
 });
 
@@ -1987,8 +2044,16 @@ app.post('/api/swap', async (req, res) => {
     const toToken = String(payload.to || '').toLowerCase();
     const amount = Number(payload.amount);
 
-    if (!telegramId || !amount || amount <= 0 || !['wifh', 'eth'].includes(fromToken) || !['wifh', 'eth'].includes(toToken)) {
+    if (!telegramId || !Number.isFinite(telegramId) || telegramId <= 0 || !Number.isFinite(amount) || amount <= 0 || !['wifh', 'eth'].includes(fromToken) || !['wifh', 'eth'].includes(toToken)) {
       return res.status(400).json({ success: false, error: 'Invalid swap payload parameters' });
+    }
+
+    const initData = (req.headers['x-telegram-init-data'] || payload.initData) as string | undefined;
+    if (initData && BOT_TOKEN) {
+      const auth = validateTelegramInitData(initData, BOT_TOKEN);
+      if (!auth.valid || (auth.user && auth.user.id !== telegramId)) {
+        return res.status(401).json({ success: false, error: 'Unauthorized Telegram WebApp session' });
+      }
     }
 
     let result;
@@ -2010,7 +2075,8 @@ app.post('/api/swap', async (req, res) => {
       tx_hash: result.txHash,
     });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    console.error('[API Error /swap]:', err);
+    return res.status(500).json({ success: false, error: 'Swap transaction failed. Please try again.' });
   }
 });
 
@@ -2205,24 +2271,50 @@ async function endTriviaGame(ctx: any) {
   }
 }
 
-// Launch Bot
-bot.launch({ allowedUpdates: ['message', 'callback_query'] }).then(() => {
-  console.log('WifhPaws Bot running with secret keywords, treasury dashboard, and WebApp!');
-  bot.telegram.setMyCommands([
-    { command: 'wallet', description: 'Open your Personal Wallet Dashboard' },
-    { command: 'leaderboard', description: 'View the top Paw Point holders' },
-    { command: 'swap', description: 'Swap between WIFH and ETH' },
-    { command: 'send', description: 'Send tokens to someone' },
-    { command: 'buy', description: 'Buy WIFH with ETH' },
-    { command: 'sell', description: 'Sell WIFH for ETH' },
-    { command: 'admin', description: 'Open Admin & Dev Control Panel (Admins)' },
-    { command: 'devpanel', description: 'Open Developer & Liquidity Control Panel (Admins)' }
-  ]).catch(err => console.error('Failed to set commands menu:', err));
-});
+// Launch Bot with Exponential Backoff Retry Logic
+async function launchBotWithRetry(maxRetries = 5, initialDelayMs = 3000) {
+  let delay = initialDelayMs;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[Bot Launch] Attempt ${attempt} of ${maxRetries} connecting to Telegram API...`);
+      await bot.launch({ allowedUpdates: ['message', 'callback_query'] });
+      console.log('WifhPaws Bot running with secret keywords, treasury dashboard, and WebApp!');
+      
+      bot.telegram.setMyCommands([
+        { command: 'wallet', description: 'Open your Personal Wallet Dashboard' },
+        { command: 'leaderboard', description: 'View the top Paw Point holders' },
+        { command: 'swap', description: 'Swap between WIFH and ETH' },
+        { command: 'send', description: 'Send tokens to someone' },
+        { command: 'buy', description: 'Buy WIFH with ETH' },
+        { command: 'sell', description: 'Sell WIFH for ETH' },
+        { command: 'admin', description: 'Open Admin & Dev Control Panel (Admins)' },
+        { command: 'devpanel', description: 'Open Developer & Liquidity Control Panel (Admins)' }
+      ]).catch(err => console.error('Failed to set commands menu:', err));
+
+      return;
+    } catch (err: any) {
+      console.error(`[Bot Launch Error] Attempt ${attempt} failed: ${err?.message || err}`);
+      if (attempt < maxRetries) {
+        console.log(`[Bot Launch] Retrying in ${Math.round(delay / 1000)}s...`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay *= 1.5;
+      } else {
+        console.error('[Bot Launch Failed] Maximum launch retries reached. Express server remains active for health checks.');
+      }
+    }
+  }
+}
+
+launchBotWithRetry();
+
 const stopBot = (signal: string) => {
   console.log(`\nReceived ${signal}. Stopping bot...`);
-  server.close();
-  bot.stop(signal);
+  try {
+    server.close();
+    bot.stop(signal);
+  } catch (e: any) {
+    console.error('Error during graceful shutdown:', e?.message || e);
+  }
   process.exit(0);
 };
 
