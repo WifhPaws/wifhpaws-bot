@@ -2236,49 +2236,60 @@ bot.action(/tq_(\d+)/, async (ctx) => {
 });
 
 async function endTriviaGame(ctx: any) {
-  const session = activeTriviaGames.get(ctx.chat.id);
-  if (!session) return;
-  activeTriviaGames.delete(ctx.chat.id);
+  try {
+    const session = activeTriviaGames.get(ctx.chat.id);
+    if (!session) return;
+    activeTriviaGames.delete(ctx.chat.id);
 
-  const players = Object.values(session.scores).sort((a, b) => b.score - a.score);
-  
-  if (players.length === 0) {
-    return ctx.reply('🏁 *Trivia Finished!*\n\nNobody scored any points! 😢', { parse_mode: 'Markdown' });
-  }
+    const scoreEntries = Object.entries(session.scores);
+    if (scoreEntries.length === 0) {
+      return ctx.reply('🏁 *Trivia Finished!*\n\nNobody scored any points! 😢', { parse_mode: 'Markdown' });
+    }
 
-  let text = '🏁 *Trivia Finished! Here are the final scores:*\n\n';
-  players.forEach((p, idx) => {
-    let medal = '';
-    if (idx === 0) medal = '🥇';
-    else if (idx === 1) medal = '🥈';
-    else if (idx === 2) medal = '🥉';
-    text += `${medal ? medal + ' ' : ''}${idx + 1}. ${p.name} - ${p.score} pts\n`;
-  });
+    const sortedScores = scoreEntries
+      .map(([keyIdStr, item]) => ({
+        keyUserId: Number(keyIdStr),
+        ...item,
+      }))
+      .sort((a, b) => b.score - a.score);
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
-
-  // Store top 3 winners as pending for admin payout command (/payout_trivia)
-  const pending: PendingWinner[] = [];
-  players.slice(0, 3).forEach((p, idx) => {
-    pending.push({
-      place: idx + 1,
-      userId: p.userId || 0,
-      name: p.name,
-      wallet: p.wallet,
+    const pending: PendingWinner[] = [];
+    sortedScores.slice(0, 3).forEach((p, idx) => {
+      pending.push({
+        place: idx + 1,
+        userId: p.userId && p.userId > 0 ? p.userId : (p.keyUserId || 0),
+        name: p.name || 'Player',
+        wallet: p.wallet || '',
+      });
     });
-  });
 
-  pendingTriviaWinners.set(ctx.chat.id, pending);
+    // Ensure pendingTriviaWinners is set before sending messages
+    pendingTriviaWinners.set(ctx.chat.id, pending);
 
-  let pendingText = `🏆 *Pending Trivia Winners Recorded!*\n\n`;
-  pending.forEach((w) => {
-    const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
-    const walletText = w.wallet ? `(\`${w.wallet.substring(0, 6)}...${w.wallet.substring(w.wallet.length - 4)}\`)` : '(_No wallet linked_)';
-    pendingText += `${medal} *${w.place} Place:* ${w.name} ${walletText}\n`;
-  });
-  pendingText += `\n*Admins:* Distribute rewards using:\n\`/payout_trivia <1st_amount> [2nd_amount] [3rd_amount]\`\n_(e.g., \`/payout_trivia 100 50 25\`)_\n\nOr dismiss this round using \`/skip_payout\`.`;
+    let text = '🏁 *Trivia Finished! Here are the final scores:*\n\n';
+    sortedScores.forEach((p, idx) => {
+      let medal = '';
+      if (idx === 0) medal = '🥇';
+      else if (idx === 1) medal = '🥈';
+      else if (idx === 2) medal = '🥉';
+      text += `${medal ? medal + ' ' : ''}${idx + 1}. ${p.name} - ${p.score} pts\n`;
+    });
 
-  await ctx.reply(pendingText, { parse_mode: 'Markdown' });
+    await ctx.reply(text, { parse_mode: 'Markdown' });
+
+    let pendingText = `🏆 *Pending Trivia Winners Recorded!*\n\n`;
+    pending.forEach((w) => {
+      const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
+      const walletText = w.wallet ? `(\`${w.wallet.substring(0, 6)}...${w.wallet.substring(w.wallet.length - 4)}\`)` : '(_No wallet linked_)';
+      pendingText += `${medal} *${w.place} Place:* ${w.name} ${walletText}\n`;
+    });
+    pendingText += `\n*Admins:* Distribute rewards using:\n\`/payout_trivia <1st_amount> [2nd_amount] [3rd_amount]\`\n_(e.g., \`/payout_trivia 100 50 25\`)_\n\nOr dismiss this round using \`/skip_payout\`.`;
+
+    await ctx.reply(pendingText, { parse_mode: 'Markdown' });
+  } catch (err: any) {
+    console.error('[endTriviaGame Error]:', err);
+    await ctx.reply('⚠️ Error finishing trivia game or recording winners.');
+  }
 }
 
 // Command: /payout_trivia <1st_amount> [2nd_amount] [3rd_amount]
