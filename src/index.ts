@@ -1858,6 +1858,10 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get('/ping', (req, res) => {
+  res.send('OK');
+});
+
 // Root Route (/) - Returns status 200 to keep Render service awake 24/7 and serves Mini App
 app.get(['/', '/index.html'], (req, res) => {
   const indexPath = path.join(process.cwd(), 'index.html');
