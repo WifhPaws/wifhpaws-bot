@@ -460,8 +460,20 @@ bot.command(['start', `start@${BOT_USERNAME}`], async (ctx) => {
     // OR just show wallet, they can use /devpanel
   }
 
-  // Regular private chat: show wallet dashboard
-  return sendWalletDashboard(ctx, userId!);
+  // Fetch user to check onboarding status
+  const { data: user } = await supabase
+    .from('users')
+    .select('onboarded_at')
+    .eq('telegram_id', userId)
+    .single();
+
+  if (user && user.onboarded_at) {
+    // Regular private chat: show wallet dashboard
+    return sendWalletDashboard(ctx, userId!);
+  } else {
+    // Show the onboarding menu for new/un-onboarded users
+    return sendOnboardingMenu(ctx);
+  }
 });
 
 bot.on('new_chat_members', async (ctx) => {
