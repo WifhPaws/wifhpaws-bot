@@ -45,6 +45,10 @@ const supabaseAdmin = createClient(
 const provider = new ethers.JsonRpcProvider(ROBINHOOD_RPC_URL);
 
 // ==========================================
+// STATE & CACHE
+// ==========================================
+const onboardingStates = new Map<number, string>();
+
 // IN-MEMORY CACHE (refreshed every 2 min)
 // ==========================================
 let cachedChatTriggers: { keyword: string; response: string }[] = [];
@@ -419,6 +423,10 @@ bot.command(['start', `start@${BOT_USERNAME}`], async (ctx) => {
     return sendWalletDashboard(ctx, ctx.from.id);
   }
 
+  if (args === 'onboarding' && ctx.chat.type === 'private') {
+    return sendOnboardingMenu(ctx);
+  }
+
   if (args === 'devpanel' && ctx.chat.type === 'private') {
     if (userId && DEV_PANEL_ALLOWED_IDS.includes(userId)) {
       return sendDevPanelMenu(ctx, devPanelDeps);
@@ -454,6 +462,76 @@ bot.command(['start', `start@${BOT_USERNAME}`], async (ctx) => {
 
   // Regular private chat: show wallet dashboard
   return sendWalletDashboard(ctx, userId!);
+});
+
+bot.on('new_chat_members', async (ctx) => {
+  const newMembers = ctx.message.new_chat_members;
+  for (const member of newMembers) {
+    if (!member.is_bot) {
+      const usernameStr = member.username ? `@${member.username}` : member.first_name;
+      try {
+        const msg = await ctx.reply(
+          `Welcome ${usernameStr}! Check your DMs to set up your wallet for trivia payouts & raid points 🐾`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🚀 Start Onboarding & Link Wallet', url: `https://t.me/${ctx.botInfo.username}?start=onboarding` }]
+              ]
+            }
+          }
+        );
+        setTimeout(() => {
+          ctx.telegram.deleteMessage(ctx.chat.id, msg.message_id).catch(() => {});
+        }, 60000);
+      } catch (e: any) {
+        console.error('Failed to send welcome message:', e.message);
+      }
+      
+      // Update welcome_sent in DB
+      try {
+        await supabase.from('users').update({ welcome_sent: true }).eq('telegram_id', member.id);
+      } catch (e: any) {
+        console.error('Failed to update welcome_sent:', e.message);
+      }
+    }
+  }
+});
+
+async function sendOnboardingMenu(ctx: any) {
+  const keyboard = [
+    [{ text: '👛 Link Wallet', callback_data: 'onboard_wallet' }],
+    [{ text: '🎮 How Trivia Works', callback_data: 'onboard_trivia' }],
+    [{ text: '⚔️ How Raids Work', callback_data: 'onboard_raids' }]
+  ];
+  const text = `🐾 *Welcome to WifhPaws!*\nGet set up to participate in community activities and earn rewards:`;
+  if (ctx.callbackQuery) {
+    return ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } });
+  } else {
+    return ctx.reply(text, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } });
+  }
+}
+
+bot.action('onboard_wallet', async (ctx) => {
+  await ctx.answerCbQuery();
+  onboardingStates.set(ctx.from.id, 'AWAITING_WALLET_INPUT');
+  return ctx.reply("Please send your Robinhood Chain address (0x...) to link your account for trivia payouts and holder rewards.");
+});
+
+bot.action('onboard_trivia', async (ctx) => {
+  await ctx.answerCbQuery();
+  const text = `🎮 *How Trivia Works*\n\nTrivia games run in group chats. Top 3 winners receive automatic payouts to their linked wallets!\nMake sure you linked your wallet.`;
+  return ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Back', callback_data: 'onboard_back' }]] } });
+});
+
+bot.action('onboard_raids', async (ctx) => {
+  await ctx.answerCbQuery();
+  const text = `⚔️ *How Raids Work*\n\nEngage with raid links posted in chat to earn points!`;
+  return ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Back', callback_data: 'onboard_back' }]] } });
+});
+
+bot.action('onboard_back', async (ctx) => {
+  await ctx.answerCbQuery();
+  return sendOnboardingMenu(ctx);
 });
 
 async function sendWalletDashboard(ctx: any, telegramId: number, edit: boolean = false, isTreasury: boolean = false) {
@@ -1806,7 +1884,28 @@ const HARDCODED_TRIGGERS: Record<string, string> = {
 // Chat Message Listener — checks triggers then awards paw points
 bot.on('message', async (ctx, next) => {
   const message = ctx.message as any;
-  if (!message || !message.text || message.text.startsWith('/') || ctx.from?.is_bot) return next();
+  if (!message || !message.text || ctx.from?.is_bot) return next();
+
+  if (ctx.chat.type === 'private' && onboardingStates.get(ctx.from.id) === 'AWAITING_WALLET_INPUT') {
+    const input = message.text.trim();
+    if (/^0x[a-fA-F0-9]{40}$/i.test(input)) {
+      try {
+        await supabase
+          .from('users')
+          .update({ wallet_address: input, onboarded_at: new Date().toISOString() })
+          .eq('telegram_id', ctx.from.id);
+        onboardingStates.delete(ctx.from.id);
+        return ctx.reply(`✅ Wallet successfully linked: \`${input}\``, { parse_mode: 'Markdown' });
+      } catch (err: any) {
+        console.error('Error linking wallet:', err.message);
+        return ctx.reply('❌ Database error. Please try again later.');
+      }
+    } else {
+      return ctx.reply('❌ Invalid format. Please send a valid EVM address (e.g., 0x...).');
+    }
+  }
+
+  if (message.text.startsWith('/')) return next();
 
   const text = message.text.toLowerCase();
   const isPrivate = ctx.chat.type === 'private';

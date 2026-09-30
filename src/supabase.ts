@@ -6,6 +6,8 @@ export interface BotUser {
   username: string | null;
   points: number;
   wallet_address: string | null;
+  onboarded_at?: string | null;
+  welcome_sent?: boolean;
   last_awarded_at: string | null;
   created_at?: string;
   updated_at?: string;

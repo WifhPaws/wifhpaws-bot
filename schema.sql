@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS public.users (
     points INT NOT NULL DEFAULT 0,
     paw_points INT NOT NULL DEFAULT 0,
     wallet_address TEXT,
+    onboarded_at TIMESTAMPTZ DEFAULT NULL,
+    welcome_sent BOOLEAN NOT NULL DEFAULT FALSE,
     last_awarded_at TIMESTAMPTZ DEFAULT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -17,6 +19,10 @@ CREATE TABLE IF NOT EXISTS public.users (
 
 -- In case 'users' table already exists, ensure 'paw_points' column is present
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS paw_points INT DEFAULT 0;
+
+-- Add onboarding columns if they don't exist
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS onboarded_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS welcome_sent BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Sync any existing points to paw_points if paw_points is 0
 UPDATE public.users SET paw_points = points WHERE (paw_points IS NULL OR paw_points = 0) AND points > 0;
