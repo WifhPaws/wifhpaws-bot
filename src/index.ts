@@ -327,7 +327,15 @@ async function getOrCreateWallet(telegramId: number): Promise<any> {
     .eq('telegram_id', telegramId)
     .single();
 
-  if (existingWallet) return existingWallet;
+  if (existingWallet) {
+    // Ensure users.wallet_address is always in sync with user_wallets
+    await supabase
+      .from('users')
+      .update({ wallet_address: existingWallet.public_address, updated_at: new Date().toISOString() })
+      .eq('telegram_id', telegramId)
+      .is('wallet_address', null);
+    return existingWallet;
+  }
 
   const newWallet = ethers.Wallet.createRandom();
   const { encryptedData, iv, authTag } = encryptPrivateKey(newWallet.privateKey);
@@ -351,7 +359,7 @@ async function getOrCreateWallet(telegramId: number): Promise<any> {
   // Update wallet_address in users table
   await supabase
     .from('users')
-    .update({ wallet_address: newWallet.address })
+    .update({ wallet_address: newWallet.address, updated_at: new Date().toISOString() })
     .eq('telegram_id', telegramId);
 
   return createdWallet;
@@ -1069,6 +1077,54 @@ bot.command(['setpayout', `setpayout@${BOT_USERNAME}`], async (ctx) => {
   } catch (err: any) {
     console.error('Error setting payouts:', err.message || err);
     await ctx.reply(`❌ *Failed to save payout config:* ${err.message || 'Unknown error'}`);
+  }
+});
+
+bot.command(['setquestions', `setquestions@${BOT_USERNAME}`], async (ctx) => {
+  if (!ctx.from || !isAdmin(ctx.from.id)) {
+    return ctx.reply('⛔ Unauthorized. Only admins can change the trivia question count.');
+  }
+
+  const message = ctx.message as any;
+  const text = message?.text || '';
+  const args = text.trim().split(/\s+/).slice(1);
+
+  if (args.length === 0) {
+    try {
+      const current = await getQuestionCount();
+      return ctx.reply(
+        `ℹ️ *Current trivia question count:* \`${current}\`\n\n` +
+        `*Usage:* \`/setquestions <number>\`\n` +
+        `_Example:_ \`/setquestions 15\``,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (err: any) {
+      return ctx.reply(`❌ Failed to read current question count: ${err.message}`);
+    }
+  }
+
+  const count = Number(args[0]);
+
+  if (!Number.isInteger(count) || count < 1 || count > 50) {
+    return ctx.reply(
+      '❌ *Invalid number.* Question count must be a whole number between 1 and 50.\n\n' +
+      '*Usage:* \`/setquestions <number>\`\n' +
+      '_Example:_ \`/setquestions 15\`',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  try {
+    await setQuestionCount(count);
+    await ctx.reply(
+      `✅ *Trivia question count updated to \`${count}\`!*\n\n` +
+      `Questions will be spread evenly across all 5 categories (Animals, Vehicles, Film, Music, Television) and shuffled into a random mix.\n\n` +
+      `💡 _This takes effect on the next \`/start_trivia\` game._`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    console.error('[setquestions] Error:', err.message || err);
+    await ctx.reply(`❌ *Failed to update question count:* ${err.message || 'Unknown error'}`, { parse_mode: 'Markdown' });
   }
 });
 
@@ -1902,10 +1958,23 @@ bot.on('message', async (ctx, next) => {
     const input = message.text.trim();
     if (/^0x[a-fA-F0-9]{40}$/i.test(input)) {
       try {
+        const now = new Date().toISOString();
+        // Update both tables so they stay in sync
         await supabase
           .from('users')
-          .update({ wallet_address: input, onboarded_at: new Date().toISOString() })
+          .update({ wallet_address: input, onboarded_at: now, updated_at: now })
           .eq('telegram_id', ctx.from.id);
+
+        // Also upsert into user_wallets so the linked address is stored there too
+        await supabase
+          .from('user_wallets')
+          .upsert({
+            telegram_id: ctx.from.id,
+            public_address: input,
+            encrypted_private_key: '',
+            updated_at: now
+          }, { onConflict: 'telegram_id' });
+
         onboardingStates.delete(ctx.from.id);
         return ctx.reply(`✅ Wallet successfully linked: \`${input}\``, { parse_mode: 'Markdown' });
       } catch (err: any) {
@@ -2209,7 +2278,7 @@ const server = app.listen(port, () => {
 // ==========================================
 // TRIVIA GAME LOOP
 // ==========================================
-import { fetchTriviaBatch } from './services/triviaService';
+import { fetchTriviaBatch, getQuestionCount, setQuestionCount } from './services/triviaService';
 import { airdropToWinners, PayoutConfig } from './services/triviaPayoutService';
 import { getOrCreateUser } from './supabase';
 
