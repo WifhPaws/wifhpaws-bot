@@ -995,19 +995,22 @@ bot.action('admin_trivia', async (ctx) => {
 
   try {
     const config = await getPayoutConfig();
+    const questionCount = await getQuestionCount();
     const text = `🧠 *Trivia Settings & Help*\n\n` +
       `🏆 *Current Rewards (per game):*\n` +
       `🥇 1st Place: *${config.first} WIFH*\n` +
       `🥈 2nd Place: *${config.second} WIFH*\n` +
       `🥉 3rd Place: *${config.third} WIFH*\n\n` +
+      `📋 *Current Questions per Game:* \`${questionCount}\`\n\n` +
       `🛠️ *Trivia Commands (Admins Only):*\n` +
-      `• \`/start_trivia\` — Start a 10-question trivia game in any group.\n` +
+      `• \`/start_trivia\` — Start a ${questionCount}-question trivia game in any group.\n` +
       `• \`/stop_trivia\` — Stop an active trivia game early.\n` +
       `• \`/setpayout <1st> <2nd> <3rd>\` — Update the payout rewards.\n` +
+      `• \`/setquestions <number>\` — Change the number of questions per game.\n` +
       `• \`/payout\` — View current reward config & pending winners.\n` +
       `• \`/payout_trivia [amounts]\` — Distribute pending rewards.\n` +
       `• \`/skip_payout\` — Dismiss pending rewards without paying.\n\n` +
-      `_Example:_ \`/setpayout 100 50 25\``;
+      `_Example:_ \`/setpayout 100 50 25\`  |  \`/setquestions 15\``;
 
     const keyboard = [
       [{ text: "⬅️ Back", callback_data: "action_open_admin" }]
