@@ -41,12 +41,12 @@ export async function getQuestionCount(): Promise<number> {
 
 /**
  * Update the question_count value in the trivia_payouts table.
- * Upserts a singleton row (place = 1) with the new count.
+ * Upserts a singleton row (id = 1) with the new count.
  */
 export async function setQuestionCount(count: number): Promise<void> {
   const { error } = await supabase
     .from('trivia_payouts')
-    .upsert({ place: 1, question_count: count }, { onConflict: 'place' });
+    .upsert({ id: 1, question_count: count }, { onConflict: 'id' });
   if (error) throw error;
 }
 
