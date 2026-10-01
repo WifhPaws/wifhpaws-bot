@@ -1120,14 +1120,14 @@ bot.command(['setquestions', `setquestions@${BOT_USERNAME}`], async (ctx) => {
   try {
     await setQuestionCount(count);
     await ctx.reply(
-      `✅ *Trivia question count updated to \`${count}\`!*\n\n` +
+      `✅ *Trivia question count updated to:* \`${count}\`\n\n` +
       `Questions will be spread evenly across all 5 categories (Animals, Vehicles, Film, Music, Television) and shuffled into a random mix.\n\n` +
-      `💡 _This takes effect on the next \`/start_trivia\` game._`,
+      `💡 _This takes effect on the next_ \`/start_trivia\` _game._`,
       { parse_mode: 'Markdown' }
     );
   } catch (err: any) {
     console.error('[setquestions] Error:', err.message || err);
-    await ctx.reply(`❌ *Failed to update question count:* ${err.message || 'Unknown error'}`, { parse_mode: 'Markdown' });
+    await ctx.reply(`❌ Failed to update question count: ${err.message || 'Unknown error'}`);
   }
 });
 
