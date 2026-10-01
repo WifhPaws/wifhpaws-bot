@@ -19,13 +19,13 @@ const TRIVIA_CATEGORIES = [
 ];
 
 /**
- * Read the configured question_count from the trivia_rewards_config table.
+ * Read the configured question_count from the trivia_payouts table.
  * Returns the stored value or 10 as a safe default.
  */
 export async function getQuestionCount(): Promise<number> {
   try {
     const { data, error } = await supabase
-      .from('trivia_rewards_config')
+      .from('trivia_payouts')
       .select('question_count')
       .limit(1)
       .maybeSingle();
@@ -40,12 +40,12 @@ export async function getQuestionCount(): Promise<number> {
 }
 
 /**
- * Update the question_count value in the trivia_rewards_config table.
+ * Update the question_count value in the trivia_payouts table.
  * Upserts a singleton row (place = 1) with the new count.
  */
 export async function setQuestionCount(count: number): Promise<void> {
   const { error } = await supabase
-    .from('trivia_rewards_config')
+    .from('trivia_payouts')
     .upsert({ place: 1, question_count: count }, { onConflict: 'place' });
   if (error) throw error;
 }

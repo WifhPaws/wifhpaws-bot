@@ -8,7 +8,7 @@ export const setTriviaReward = async (place: number, amount: number) => {
     throw new Error('Place must be 1, 2, or 3');
   }
   const { error } = await supabase
-    .from('trivia_rewards_config')
+    .from('trivia_payouts')
     .upsert({ place, amount }, { onConflict: 'place' });
   if (error) throw error;
 };
@@ -16,7 +16,7 @@ export const setTriviaReward = async (place: number, amount: number) => {
 /** Retrieve configured rewards for places 1‑3. Returns a map place→amount */
 export const getTriviaRewards = async (): Promise<Record<number, number>> => {
   const { data, error } = await supabase
-    .from('trivia_rewards_config')
+    .from('trivia_payouts')
     .select('place, amount');
   if (error) throw error;
   const map: Record<number, number> = {};
