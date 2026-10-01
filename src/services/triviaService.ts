@@ -62,22 +62,30 @@ export const fetchTriviaBatch = async (): Promise<TriviaQuestion[]> => {
   // Spread questions evenly across categories
   const perCategory = Math.max(1, Math.ceil(totalCount / TRIVIA_CATEGORIES.length));
 
-  // Fetch from every category in parallel
-  const fetches = TRIVIA_CATEGORIES.map(async (categoryId) => {
+  const allBatches: TriviaQuestion[][] = [];
+
+  // Fetch sequentially with a 5-second delay to respect OpenTDB's strict rate limit
+  for (let i = 0; i < TRIVIA_CATEGORIES.length; i++) {
+    const categoryId = TRIVIA_CATEGORIES[i];
     try {
+      if (i > 0) {
+        // Wait 5000ms between requests to avoid HTTP 429 Too Many Requests
+        await new Promise(res => setTimeout(res, 5000));
+      }
+
       const response = await fetch(
         `https://opentdb.com/api.php?amount=${perCategory}&category=${categoryId}&difficulty=easy&type=multiple`
       );
       if (!response.ok) {
         console.warn(`[triviaService] Category ${categoryId} request failed: ${response.status}`);
-        return [];
+        continue;
       }
       const data: any = await response.json();
       if (data.response_code !== 0) {
         console.warn(`[triviaService] Category ${categoryId} returned response_code ${data.response_code}`);
-        return [];
+        continue;
       }
-      return data.results.map((raw: any): TriviaQuestion => {
+      const questions = data.results.map((raw: any): TriviaQuestion => {
         const question = decodeHtml(raw.question);
         const correct = decodeHtml(raw.correct_answer);
         const incorrect = raw.incorrect_answers.map((a: string) => decodeHtml(a));
@@ -85,13 +93,12 @@ export const fetchTriviaBatch = async (): Promise<TriviaQuestion[]> => {
         const correctIdx = shuffled.findIndex(opt => opt === correct);
         return { question, options: shuffled, correctOptionId: correctIdx };
       });
+      allBatches.push(questions);
     } catch (err) {
       console.warn(`[triviaService] Failed to fetch category ${categoryId}:`, err);
-      return [];
     }
-  });
+  }
 
-  const allBatches = await Promise.all(fetches);
   const combined = allBatches.flat();
 
   if (combined.length === 0) {
