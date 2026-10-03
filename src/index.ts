@@ -2600,13 +2600,7 @@ async function endTriviaGame(ctx: any) {
       let pendingText = `🏆 *Pending Trivia Winners Recorded!*\n\n`;
       pending.forEach((w) => {
         const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
-        let walletText = '(_No wallet linked_)';
-        if (w.wallet && w.wallet.length >= 10) {
-          walletText = `(\`${w.wallet.substring(0, 6)}...${w.wallet.substring(w.wallet.length - 4)}\`)`;
-        } else if (w.wallet) {
-          walletText = `(\`${w.wallet}\`)`;
-        }
-        pendingText += `${medal} *${w.place} Place:* ${w.name} ${walletText}\n`;
+        pendingText += `${medal} *${w.place} Place:* ${w.name}\n`;
       });
       pendingText += `\n✅ *Ready to distribute!*`;
 
