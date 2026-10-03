@@ -9,6 +9,15 @@ import dotenv from 'dotenv';
 import { getPayoutConfig, setPayoutConfig } from './services/triviaPayoutService';
 import { calculateAndRouteFee, dispatchFeesToDevWallet, getDevWalletAddress } from './services/feeService';
 import { sendDevPanelMenu, setupDevPanelActions, DevPanelDeps } from './services/devPanelService';
+import { registerRbacCommands } from './commands/rbacCommands';
+import { cacheUserMiddleware, checkPermission } from './middleware/rbacGuards';
+import {
+  isGlobalMaster,
+  getProjectByChatId,
+  getEffectiveRole,
+  hasMinimumRole,
+  upsertUserCache,
+} from './services/rbacService';
 
 dotenv.config();
 const BOT_USERNAME = process.env.BOT_USERNAME || '';
@@ -36,6 +45,12 @@ const bot = new Telegraf(BOT_TOKEN);
 bot.catch((err: any, ctx) => {
   console.error(`Telegram error in ${ctx.updateType}:`, err?.message || err);
 });
+
+// ── RBAC: Cache every user's handle ↔ ID mapping on every interaction ──
+bot.use(cacheUserMiddleware);
+
+// ── RBAC: Register all three-tier RBAC commands ──
+registerRbacCommands(bot);
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // Use service role key for server-side reads to bypass RLS
 const supabaseAdmin = createClient(
@@ -380,15 +395,41 @@ async function loadDynamicAdmins() {
 loadDynamicAdmins();
 
 function isAdmin(userId: number): boolean {
+  // Tier 0: Global Masters always pass
+  if (isGlobalMaster(userId)) return true;
+  // Legacy env-based checks
   const adminSingle = process.env.ADMIN_TELEGRAM_ID?.trim();
   const idStr = userId.toString();
   return ADMIN_USER_IDS.includes(idStr) || (adminSingle === idStr) || dynamicAdmins.has(idStr);
 }
 
 function isSuperAdmin(userId: number): boolean {
+  // Tier 0: Global Masters always pass
+  if (isGlobalMaster(userId)) return true;
+  // Legacy env-based checks
   const adminSingle = process.env.ADMIN_TELEGRAM_ID?.trim();
   const idStr = userId.toString();
   return ADMIN_USER_IDS.includes(idStr) || (adminSingle === idStr);
+}
+
+/**
+ * RBAC-aware admin check. Checks both the new project-based RBAC system
+ * and the legacy env-based admin lists.
+ * Returns true if the user has at least `mod` role in the project for this chat,
+ * OR if they pass the legacy isAdmin() check.
+ */
+async function isAdminForChat(chatId: number, userId: number): Promise<boolean> {
+  if (isAdmin(userId)) return true;
+  return checkPermission(chatId, userId, 'mod');
+}
+
+/**
+ * RBAC-aware super admin check. Returns true if the user has at least
+ * `super_admin` role in the project, OR passes the legacy isSuperAdmin() check.
+ */
+async function isSuperAdminForChat(chatId: number, userId: number): Promise<boolean> {
+  if (isSuperAdmin(userId)) return true;
+  return checkPermission(chatId, userId, 'super_admin');
 }
 
 async function getTargetUser(ctx: Context): Promise<{ id: number; username?: string } | null> {
@@ -1136,26 +1177,37 @@ bot.action('admin_help', async (ctx) => {
   if (!isAdmin(ctx.from!.id)) return ctx.reply('\u26D4 Unauthorized.');
 
   const helpText = `🛡️ *Admin Commands Cheat Sheet*\n\n` +
-    `👤 *Management:*\n` +
-    `• \`/makeadmin @username\` — Promote a user to admin.\n` +
-    `• \`/admin\` — Open the visual Admin Control Center.\n\n` +
-    `🏛️ *Treasury & Tokens:*\n` +
-    `• \`/treasury\` — View live project treasury balances.\n` +
-    `• \`/airdrop @username 50\` — Send 50 WIFH to a user.\n` +
-    `• \`/airdrop @username $10\` — Send $10 worth of WIFH.\n` +
-    `• \`/tsend 10 wifh @username\` — Send from treasury.\n` +
-    `• \`/tswap 10 eth wifh\` — Swap treasury funds.\n` +
-    `• \`/tbuy 0.1\` — Buy WIFH with 0.1 ETH from treasury.\n` +
-    `• \`/tsell 100\` — Sell 100 WIFH from treasury.\n\n` +
-    `🔑 *Keyword Rewards:*\n` +
-    `• \`/keywords\` — List all active keywords.\n` +
-    `• \`/addkeyword hello 10\` — Reward 10 pts for saying "hello".\n` +
-    `• \`/removekeyword hello\` — Delete the "hello" keyword.\n` +
-    `• \`/clearallkeywords\` — Delete all keywords at once.\n\n` +
-    `⭐ *Paw Points:*\n` +
-    `• \`/addpoints @username 100\` — Give 100 points.\n` +
-    `• \`/resetpoints @username\` — Reset one user's points to 0.\n` +
-    `• \`/resetallpoints\` — Clear points for ALL users (leaderboard reset).`;
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `👑 *Tier 0 — Global Masters:*\n` +
+    `• \`/initproject @owner [name]\` — Bootstrap a project instance\n\n` +
+    `🏛️ *Tier 1 — Project Owner:*\n` +
+    `• \`/addadmin @user\` — Add a moderator\n` +
+    `• \`/promotesuper @user\` — Promote mod → Super Admin\n` +
+    `• \`/demote @user\` — Demote Super Admin → Mod\n` +
+    `• \`/removeadmin @user\` — Remove all privileges\n\n` +
+    `⭐ *Tier 2a — Super Admin (Financial):*\n` +
+    `• \`/addadmin @user\` — Add a moderator\n` +
+    `• \`/treasury\` — View live project treasury\n` +
+    `• \`/airdrop @username 50\` — Send 50 WIFH\n` +
+    `• \`/airdrop @username $10\` — Send $10 of WIFH\n` +
+    `• \`/tsend 10 wifh @user\` — Send from treasury\n` +
+    `• \`/tswap 10 eth wifh\` — Swap treasury funds\n` +
+    `• \`/tbuy 0.1\` — Buy WIFH from treasury\n` +
+    `• \`/tsell 100\` — Sell WIFH from treasury\n\n` +
+    `🛡️ *Tier 2b — Moderators:*\n` +
+    `• \`/addkeyword hello 10\` — Add rewarded keyword\n` +
+    `• \`/removekeyword hello\` — Remove keyword\n` +
+    `• \`/clearallkeywords\` — Clear all keywords\n` +
+    `• \`/addpoints @user 100\` — Give points\n` +
+    `• \`/resetpoints @user\` — Reset user points\n` +
+    `• \`/resetallpoints\` — Reset all points\n` +
+    `• 🚫 No treasury/financial access\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `📋 *General:*\n` +
+    `• \`/myrole\` — Check your role\n` +
+    `• \`/roles\` — List project staff\n` +
+    `• \`/rbachelp\` — Full RBAC reference\n` +
+    `• \`/admin\` — Open Admin Control Center`;
 
   return ctx.reply(helpText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: BACK_TO_ADMIN } });
 });
@@ -2749,7 +2801,15 @@ async function launchBotWithRetry(maxRetries = 5, initialDelayMs = 3000) {
         { command: 'devpanel', description: 'Open Developer & Liquidity Control Panel (Admins)' },
         { command: 'payout', description: 'View trivia reward config & pending winners (Admins)' },
         { command: 'payout_trivia', description: 'Distribute pending trivia rewards (Admins)' },
-        { command: 'skip_payout', description: 'Dismiss pending trivia rewards (Admins)' }
+        { command: 'skip_payout', description: 'Dismiss pending trivia rewards (Admins)' },
+        { command: 'initproject', description: 'Bootstrap a project instance (Global Masters)' },
+        { command: 'addadmin', description: 'Add a moderator to the project (Owner/Super Admin)' },
+        { command: 'promotesuper', description: 'Promote mod to Super Admin (Owner)' },
+        { command: 'demote', description: 'Demote Super Admin to mod (Owner)' },
+        { command: 'removeadmin', description: 'Remove admin privileges (Owner)' },
+        { command: 'roles', description: 'List all project staff roles' },
+        { command: 'myrole', description: 'Check your role in this project' },
+        { command: 'rbachelp', description: 'View RBAC role hierarchy & commands' },
       ]).catch(err => console.error('Failed to set commands menu:', err));
 
       return;
