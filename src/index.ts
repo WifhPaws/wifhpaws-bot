@@ -820,8 +820,14 @@ bot.action('admin_treasury', async (ctx) => {
     const ethUsd = (parseFloat(ethBalance) * ethPrice).toFixed(2);
     const wifhUsd = (parseFloat(wifhBalance) * wifhPrice).toFixed(2);
 
+    const webAppUrl = WEBAPP_URL + '&mode=treasury';
     const treasuryKeyboard = [
-      [{ text: '\u{1F4E5} Deposit to Treasury', callback_data: 'admin_treasury_deposit' }],
+      [{ text: '🚀 Launch Mini App Dashboard', web_app: { url: webAppUrl } }],
+      [
+        { text: '📥 Receive', callback_data: 'action_treasury_receive' },
+        { text: '💸 Send', callback_data: 'action_treasury_send_guide' }
+      ],
+      [{ text: '🔄 Swap Tokens', callback_data: 'action_treasury_swap' }],
       [
         { text: '\u{1FA82} Airdrop', callback_data: 'admin_airdrop' },
         { text: '\u{1F504} Refresh', callback_data: 'admin_treasury' }
