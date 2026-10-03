@@ -17,6 +17,8 @@ import {
   getEffectiveRole,
   hasMinimumRole,
   upsertUserCache,
+  hasAnyRbacRole,
+  getHighestRoleAcrossProjects,
 } from './services/rbacService';
 
 dotenv.config();
@@ -412,6 +414,17 @@ function isSuperAdmin(userId: number): boolean {
   return ADMIN_USER_IDS.includes(idStr) || (adminSingle === idStr);
 }
 
+async function isModOrHigher(userId: number): Promise<boolean> {
+  if (isAdmin(userId)) return true;
+  return await hasAnyRbacRole(userId); // Any role is at least Mod
+}
+
+async function isSuperAdminOrHigherRBAC(userId: number): Promise<boolean> {
+  if (isSuperAdmin(userId)) return true;
+  const highest = await getHighestRoleAcrossProjects(userId);
+  return highest === 'global_master' || highest === 'project_owner' || highest === 'super_admin';
+}
+
 /**
  * RBAC-aware admin check. Checks both the new project-based RBAC system
  * and the legacy env-based admin lists.
@@ -643,7 +656,9 @@ async function sendWalletDashboard(ctx: any, telegramId: number, edit: boolean =
       keyboard[2].push({ text: '🔐 Export Private Key', callback_data: 'action_export_key' });
     }
 
-    if (isAdmin(telegramId)) {
+    // Show Admin Panel button if user is a legacy admin OR has any RBAC role
+    const showAdminPanel = isAdmin(telegramId) || await hasAnyRbacRole(telegramId);
+    if (showAdminPanel) {
       keyboard.push([{ text: '🛡️ Open Admin Panel', callback_data: 'action_open_admin' }]);
     }
 
@@ -692,7 +707,7 @@ bot.action('action_wallet_home', async (ctx) => {
 
 bot.action('action_treasury_home', async (ctx) => {
   await ctx.answerCbQuery();
-  if (!isAdmin(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
+  if (!isAdmin(ctx.from.id) && !(await hasAnyRbacRole(ctx.from.id))) return ctx.reply('⛔ Unauthorized.');
   return sendWalletDashboard(ctx, ctx.from.id, true, true);
 });
 
@@ -780,7 +795,7 @@ bot.action('action_export_key', async (ctx) => {
 bot.action('admin_treasury', async (ctx) => {
   await ctx.answerCbQuery();
   const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!senderId || !(await isSuperAdminOrHigherRBAC(senderId))) return ctx.reply('\u26D4 Unauthorized. Requires Super Admin.');
   if (!treasurySigner) return ctx.reply('\u274C Treasury wallet is not configured. Check TREASURY_PRIVATE_KEY.');
 
   try {
@@ -840,7 +855,7 @@ bot.action('admin_treasury_deposit', async (ctx) => {
 bot.action('admin_airdrop', async (ctx) => {
   await ctx.answerCbQuery();
   const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!senderId || !(await isSuperAdminOrHigherRBAC(senderId))) return ctx.reply('\u26D4 Unauthorized. Requires Super Admin.');
   return ctx.reply(
     `\u{1FA82} *Token Airdrop Command:*\n\n` +
     `\`/airdrop [@username or 0xAddress] [amount]\`\n\n` +
@@ -853,7 +868,7 @@ bot.action('admin_airdrop', async (ctx) => {
 bot.action('admin_reset', async (ctx) => {
   await ctx.answerCbQuery();
   const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!senderId || !(await isModOrHigher(senderId))) return ctx.reply('\u26D4 Unauthorized.');
   return ctx.reply(
     `\u2699\uFE0F *Points Reset Options:*\n\n` +
     `\u2022 \`/resetpoints @username\` \u2014 Reset single user points\n` +
@@ -865,7 +880,7 @@ bot.action('admin_reset', async (ctx) => {
 bot.action('admin_keywords', async (ctx) => {
   await ctx.answerCbQuery();
   const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!senderId || !(await isModOrHigher(senderId))) return ctx.reply('\u26D4 Unauthorized.');
   const ADMIN_WEB_URL = (process.env.WEBAPP_URL?.trim() || 'https://wifhpaws-bot.onrender.com/').replace(/\/$/, '') + '/admin';
   const keywordsKeyboard = [
     [{ text: '🌐 Open Web Admin Panel', web_app: { url: ADMIN_WEB_URL } }],
@@ -891,7 +906,7 @@ bot.action('admin_keywords', async (ctx) => {
 bot.action('action_list_keywords', async (ctx) => {
   await ctx.answerCbQuery();
   const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!senderId || !(await isModOrHigher(senderId))) return ctx.reply('\u26D4 Unauthorized.');
   
   const { data: keywords } = await supabase.from('dynamic_keywords').select('*');
   if (!keywords || keywords.length === 0) return ctx.reply('\u2139\uFE0F No custom rewarded keywords registered.');
@@ -908,7 +923,7 @@ bot.action('action_list_keywords', async (ctx) => {
 bot.action('action_list_triggers', async (ctx) => {
   await ctx.answerCbQuery();
   const senderId = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!senderId || !(await isModOrHigher(senderId))) return ctx.reply('\u26D4 Unauthorized.');
 
   const { data: triggers } = await supabase.from('chat_triggers').select('keyword, response');
   if (!triggers || triggers.length === 0) return ctx.reply('\u2139\uFE0F No custom chat triggers set.');
@@ -930,8 +945,11 @@ const DEV_PANEL_ALLOWED_IDS = (process.env.DEV_PANEL_ALLOWED_IDS || '')
 // ─── Reusable Admin Panel Renderer ───────────────────────────────────────────
 async function sendAdminPanel(ctx: any) {
   const senderId: number = ctx.from?.id;
-  if (!senderId || !isAdmin(senderId)) {
-    const reply = ctx.reply || ctx.answerCbQuery;
+  if (!senderId) return ctx.reply('⛔ Unauthorized.');
+
+  // Check legacy admin OR RBAC role
+  const authorized = isAdmin(senderId) || await hasAnyRbacRole(senderId);
+  if (!authorized) {
     return ctx.reply('⛔ Unauthorized.');
   }
 
@@ -1000,7 +1018,9 @@ const devPanelDeps: DevPanelDeps = {
 setupDevPanelActions(bot, async (id) => (id !== undefined ? DEV_PANEL_ALLOWED_IDS.includes(id) : false), devPanelDeps);
 
 bot.command(['admin', `admin@${BOT_USERNAME}`], async (ctx) => {
-  if (!ctx.from || !isAdmin(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
+  if (!ctx.from) return ctx.reply('⛔ Unauthorized.');
+  const isAuthorized = isAdmin(ctx.from.id) || await hasAnyRbacRole(ctx.from.id);
+  if (!isAuthorized) return ctx.reply('⛔ Unauthorized.');
   return sendAdminPanel(ctx);
 });
 
@@ -1032,7 +1052,7 @@ bot.command(['devpanel', `devpanel@${BOT_USERNAME}`], async (ctx) => {
 
 bot.action('admin_trivia', async (ctx) => {
   await ctx.answerCbQuery();
-  if (!isAdmin(ctx.from!.id)) return ctx.reply('⛔ Unauthorized.');
+  if (!(await isModOrHigher(ctx.from!.id))) return ctx.reply('⛔ Unauthorized.');
 
   try {
     const config = await getPayoutConfig();
@@ -1068,8 +1088,8 @@ bot.action('admin_trivia', async (ctx) => {
 });
 
 bot.command(['setpayout', `setpayout@${BOT_USERNAME}`], async (ctx) => {
-  if (!ctx.from || !isAdmin(ctx.from.id)) {
-    return ctx.reply('⛔ Unauthorized. Only admins can configure trivia payouts.');
+  if (!ctx.from || !(await isSuperAdminOrHigherRBAC(ctx.from.id))) {
+    return ctx.reply('⛔ Unauthorized. Only Super Admins can configure trivia payouts.');
   }
 
   const message = ctx.message as any;
@@ -1125,8 +1145,8 @@ bot.command(['setpayout', `setpayout@${BOT_USERNAME}`], async (ctx) => {
 });
 
 bot.command(['setquestions', `setquestions@${BOT_USERNAME}`], async (ctx) => {
-  if (!ctx.from || !isAdmin(ctx.from.id)) {
-    return ctx.reply('⛔ Unauthorized. Only admins can change the trivia question count.');
+  if (!ctx.from || !(await isModOrHigher(ctx.from.id))) {
+    return ctx.reply('⛔ Unauthorized. Only Mods or higher can change the trivia question count.');
   }
 
   const message = ctx.message as any;
@@ -1174,7 +1194,7 @@ bot.command(['setquestions', `setquestions@${BOT_USERNAME}`], async (ctx) => {
 
 bot.action('admin_help', async (ctx) => {
   await ctx.answerCbQuery();
-  if (!isAdmin(ctx.from!.id)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!(await isModOrHigher(ctx.from!.id))) return ctx.reply('\u26D4 Unauthorized.');
 
   const helpText = `🛡️ *Admin Commands Cheat Sheet*\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -1193,8 +1213,12 @@ bot.action('admin_help', async (ctx) => {
     `• \`/tsend 10 wifh @user\` — Send from treasury\n` +
     `• \`/tswap 10 eth wifh\` — Swap treasury funds\n` +
     `• \`/tbuy 0.1\` — Buy WIFH from treasury\n` +
-    `• \`/tsell 100\` — Sell WIFH from treasury\n\n` +
+    `• \`/tsell 100\` — Sell WIFH from treasury\n` +
+    `• \`/payout_trivia\` — Distribute trivia rewards\n` +
+    `• \`/setpayout\` — Configure trivia payouts\n\n` +
     `🛡️ *Tier 2b — Moderators:*\n` +
+    `• \`/start_trivia\` — Start trivia game\n` +
+    `• \`/stop_trivia\` — Stop trivia game\n` +
     `• \`/addkeyword hello 10\` — Add rewarded keyword\n` +
     `• \`/removekeyword hello\` — Remove keyword\n` +
     `• \`/clearallkeywords\` — Clear all keywords\n` +
@@ -1306,7 +1330,7 @@ bot.command(['send', `send@${BOT_USERNAME}`], async (ctx) => {
 // Treasury Transfer Command (/tsend)
 bot.command('tsend', async (ctx) => {
   if (ctx.chat.type !== 'private') return ctx.reply('🔒 Transfers can only be initiated in private messages for security.');
-  if (!isAdmin(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
+  if (!(await isSuperAdminOrHigherRBAC(ctx.from.id))) return ctx.reply('⛔ Unauthorized.');
   if (!treasurySigner) return ctx.reply('❌ Treasury wallet is not configured in .env.');
 
   const args = ctx.message.text.split(' ').filter(Boolean);
@@ -1438,7 +1462,7 @@ bot.command('sell', async (ctx) => {
 // Treasury Swap Command (/tswap)
 bot.command('tswap', async (ctx) => {
   if (ctx.chat.type !== 'private') return ctx.reply('\u{1F512} Swaps can only be executed in private messages.');
-  if (!isAdmin(ctx.from.id)) return ctx.reply('⛔ Unauthorized. Only admins can swap treasury funds.');
+  if (!(await isSuperAdminOrHigherRBAC(ctx.from.id))) return ctx.reply('⛔ Unauthorized. Only admins can swap treasury funds.');
   if (!treasurySigner) return ctx.reply('❌ Treasury wallet is not configured in .env.');
 
   const args = ctx.message.text.split(' ').filter(Boolean);
@@ -1643,29 +1667,44 @@ bot.command('dsell', async (ctx) => {
 
 
 bot.command('adminhelp', async (ctx) => {
-    if (!isAdmin(ctx.from.id)) return ctx.reply("\u26D4 Unauthorized.");
+    if (!(await isModOrHigher(ctx.from.id))) return ctx.reply("\u26D4 Unauthorized.");
 
   const helpText = `🛡️ *Admin Commands Cheat Sheet*\n\n` +
-    `👤 *Management:*\n` +
-    `• \`/makeadmin @username\` — Promote a user to admin.\n` +
-    `• \`/admin\` — Open the visual Admin Control Center.\n\n` +
-    `🏛️ *Treasury & Tokens:*\n` +
-    `• \`/treasury\` — View live project treasury balances.\n` +
-    `• \`/airdrop @username 50\` — Send 50 WIFH to a user.\n` +
-    `• \`/airdrop @username $10\` — Send $10 worth of WIFH.\n` +
-    `• \`/tsend 10 wifh @username\` — Send from treasury.\n` +
-    `• \`/tswap 10 eth wifh\` — Swap treasury funds.\n` +
-    `• \`/tbuy 0.1\` — Buy WIFH with 0.1 ETH from treasury.\n` +
-    `• \`/tsell 100\` — Sell 100 WIFH from treasury.\n\n` +
-    `🔑 *Keyword Rewards:*\n` +
-    `• \`/keywords\` — List all active keywords.\n` +
-    `• \`/addkeyword hello 10\` — Reward 10 pts for saying "hello".\n` +
-    `• \`/removekeyword hello\` — Delete the "hello" keyword.\n` +
-    `• \`/clearallkeywords\` — Delete all keywords at once.\n\n` +
-    `⭐ *Paw Points:*\n` +
-    `• \`/addpoints @username 100\` — Give 100 points.\n` +
-    `• \`/resetpoints @username\` — Reset one user's points to 0.\n` +
-    `• \`/resetallpoints\` — Clear points for ALL users (leaderboard reset).`;
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `👑 *Tier 0 — Global Masters:*\n` +
+    `• \`/initproject @owner [name]\` — Bootstrap a project instance\n\n` +
+    `🏛️ *Tier 1 — Project Owner:*\n` +
+    `• \`/addadmin @user\` — Add a moderator\n` +
+    `• \`/promotesuper @user\` — Promote mod → Super Admin\n` +
+    `• \`/demote @user\` — Demote Super Admin → Mod\n` +
+    `• \`/removeadmin @user\` — Remove all privileges\n\n` +
+    `⭐ *Tier 2a — Super Admin (Financial):*\n` +
+    `• \`/addadmin @user\` — Add a moderator\n` +
+    `• \`/treasury\` — View live project treasury\n` +
+    `• \`/airdrop @username 50\` — Send 50 WIFH\n` +
+    `• \`/airdrop @username $10\` — Send $10 of WIFH\n` +
+    `• \`/tsend 10 wifh @user\` — Send from treasury\n` +
+    `• \`/tswap 10 eth wifh\` — Swap treasury funds\n` +
+    `• \`/tbuy 0.1\` — Buy WIFH from treasury\n` +
+    `• \`/tsell 100\` — Sell WIFH from treasury\n` +
+    `• \`/payout_trivia\` — Distribute trivia rewards\n` +
+    `• \`/setpayout\` — Configure trivia payouts\n\n` +
+    `🛡️ *Tier 2b — Moderators:*\n` +
+    `• \`/start_trivia\` — Start trivia game\n` +
+    `• \`/stop_trivia\` — Stop trivia game\n` +
+    `• \`/addkeyword hello 10\` — Add rewarded keyword\n` +
+    `• \`/removekeyword hello\` — Remove keyword\n` +
+    `• \`/clearallkeywords\` — Clear all keywords\n` +
+    `• \`/addpoints @user 100\` — Give points\n` +
+    `• \`/resetpoints @user\` — Reset user points\n` +
+    `• \`/resetallpoints\` — Reset all points\n` +
+    `• 🚫 No treasury/financial access\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `📋 *General:*\n` +
+    `• \`/myrole\` — Check your role\n` +
+    `• \`/roles\` — List project staff\n` +
+    `• \`/rbachelp\` — Full RBAC reference\n` +
+    `• \`/admin\` — Open Admin Control Center`;
 
     return ctx.reply(helpText, { parse_mode: 'Markdown' });
 });
@@ -1760,7 +1799,7 @@ bot.command('makeadmin', async (ctx) => {
 
 bot.command('treasury', async (ctx) => {
   const senderId = ctx.from.id;
-  if (!isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized. Project treasury details are restricted to admins.');
+  if (!(await isSuperAdminOrHigherRBAC(senderId))) return ctx.reply('\u26D4 Unauthorized. Project treasury details are restricted to admins.');
   if (!treasurySigner) return ctx.reply('\u274C Project Treasury wallet is not configured. Check your `TREASURY_PRIVATE_KEY` environment variable.');
 
   try {
@@ -1787,7 +1826,7 @@ bot.command('treasury', async (ctx) => {
 
 bot.command('airdrop', async (ctx) => {
   const senderId = ctx.from.id;
-  if (!isAdmin(senderId)) return ctx.reply('\u26D4 Unauthorized. Only project admins can trigger token airdrops.');
+  if (!(await isSuperAdminOrHigherRBAC(senderId))) return ctx.reply('\u26D4 Unauthorized. Only project admins can trigger token airdrops.');
   if (!treasurySigner) return ctx.reply('\u274C Project Treasury wallet is not configured. Add `TREASURY_PRIVATE_KEY` to Render environment variables.');
   const args = ctx.message.text.split(' ').filter(Boolean);
   if (args.length < 3) {
@@ -1880,7 +1919,7 @@ bot.command('leaderboard', async (ctx) => {
 });
 
 bot.command('addpoints', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!(await isModOrHigher(ctx.from.id))) return ctx.reply('\u26D4 Unauthorized.');
   const args = ctx.message.text.split(' ').filter(Boolean);
   const amount = parseInt(args[args.length - 1], 10);
   if (isNaN(amount)) return ctx.reply('\u26A0\uFE0F Usage: `/addpoints [amount]` or `/addpoints @username [amount]`');
@@ -1893,7 +1932,7 @@ bot.command('addpoints', async (ctx) => {
 });
 
 bot.command('resetpoints', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!(await isModOrHigher(ctx.from.id))) return ctx.reply('\u26D4 Unauthorized.');
   const targetUser = await getTargetUser(ctx);
   if (!targetUser) return ctx.reply('\u26A0\uFE0F Usage: `/resetpoints @username`');
   await supabase.from('users').upsert({ telegram_id: targetUser.id, points: 0 }, { onConflict: 'telegram_id' });
@@ -1901,14 +1940,14 @@ bot.command('resetpoints', async (ctx) => {
 });
 
 bot.command('resetallpoints', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!(await isModOrHigher(ctx.from.id))) return ctx.reply('\u26D4 Unauthorized.');
   const { error } = await supabase.from('users').update({ points: 0 }).neq('telegram_id', 0);
   if (error) return ctx.reply(`\u274C Failed to reset points: ${error.message}`);
   return ctx.reply('\u{1F504} Success! All user point balances have been reset to 0.');
 });
 
 bot.command('addkeyword', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!(await isModOrHigher(ctx.from.id))) return ctx.reply('\u26D4 Unauthorized.');
   const args = ctx.message.text.split(' ').slice(1);
   if (args.length < 2) return ctx.reply('\u26A0\uFE0F Usage: `/addkeyword [word or phrase] [points]`');
   
@@ -1924,7 +1963,7 @@ bot.command('addkeyword', async (ctx) => {
 });
 
 bot.command('removekeyword', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!(await isModOrHigher(ctx.from.id))) return ctx.reply('\u26D4 Unauthorized.');
   const args = ctx.message.text.split(' ').slice(1);
   if (args.length < 1) return ctx.reply('\u26A0\uFE0F Usage: `/removekeyword [word]`');
   const keyword = args[0].toLowerCase().trim();
@@ -1934,14 +1973,14 @@ bot.command('removekeyword', async (ctx) => {
 });
 
 bot.command('clearallkeywords', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!(await isModOrHigher(ctx.from.id))) return ctx.reply('\u26D4 Unauthorized.');
   const { error } = await supabase.from('dynamic_keywords').delete().neq('keyword', '');
   if (error) return ctx.reply(`\u274C Failed to clear keywords: ${error.message}`);
   return ctx.reply('\u{1F5D1}\uFE0F All secret keywords have been removed.');
 });
 
 bot.command('keywords', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) {
+  if (!(await isModOrHigher(ctx.from.id))) {
     return ctx.reply('\u{1F916} Keep guessing! Active secret keywords are hidden from public view.');
   }
   const { data: keywords } = await supabase.from('dynamic_keywords').select('*');
@@ -1954,7 +1993,7 @@ bot.command('keywords', async (ctx) => {
 });
 
 bot.command('addtrigger', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!(await isModOrHigher(ctx.from.id))) return ctx.reply('\u26D4 Unauthorized.');
   const full = ctx.message.text.replace('/addtrigger', '').trim();
   const separator = full.indexOf('|');
   if (separator === -1) return ctx.reply('\u26A0\uFE0F Usage: `/addtrigger keyword | Bot response here`', { parse_mode: 'Markdown' });
@@ -1968,7 +2007,7 @@ bot.command('addtrigger', async (ctx) => {
 });
 
 bot.command('removetrigger', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!(await isModOrHigher(ctx.from.id))) return ctx.reply('\u26D4 Unauthorized.');
   const keyword = ctx.message.text.replace('/removetrigger', '').trim().toLowerCase();
   if (!keyword) return ctx.reply('\u26A0\uFE0F Usage: `/removetrigger keyword`', { parse_mode: 'Markdown' });
   const { error } = await supabase.from('chat_triggers').delete().eq('keyword', keyword);
@@ -1978,7 +2017,7 @@ bot.command('removetrigger', async (ctx) => {
 });
 
 bot.command('listtriggers', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!(await isModOrHigher(ctx.from.id))) return ctx.reply('\u26D4 Unauthorized.');
   const { data: triggers } = await supabase.from('chat_triggers').select('keyword, response');
   if (!triggers || triggers.length === 0) return ctx.reply('\u2139\uFE0F No custom chat triggers set.');
   let text = '\u{1F4AC} *Active Chat Triggers:*\n\n';
@@ -1987,7 +2026,7 @@ bot.command('listtriggers', async (ctx) => {
 });
 
 bot.command('cleartriggers', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply('\u26D4 Unauthorized.');
+  if (!(await isModOrHigher(ctx.from.id))) return ctx.reply('\u26D4 Unauthorized.');
   const { error } = await supabase.from('chat_triggers').delete().neq('keyword', '');
   if (error) return ctx.reply(`\u274C Failed: ${error.message}`);
   refreshTriggerCache(); // immediate cache update
@@ -2195,7 +2234,11 @@ app.get('/api/refresh-cache', async (req, res) => {
 app.get('/api/is-admin', async (req, res) => {
   try {
     const telegramId = Number(req.query.telegram_id);
-    const adminCheck = telegramId > 0 && (await isAdmin(telegramId));
+    console.log(`[API /is-admin] telegramId=${telegramId}`);
+    const legacyAdmin = telegramId > 0 && isAdmin(telegramId);
+    const rbacAdmin = telegramId > 0 && (await hasAnyRbacRole(telegramId));
+    const adminCheck = legacyAdmin || rbacAdmin;
+    console.log(`[API /is-admin] legacyAdmin=${legacyAdmin}, rbacAdmin=${rbacAdmin}, result=${adminCheck}`);
     return res.status(200).json({ is_admin: adminCheck });
   } catch (err) {
     console.error('[API Error /is-admin]:', err);
@@ -2223,7 +2266,7 @@ app.get('/api/balance', async (req, res) => {
 
     let address = '';
     if (mode === 'treasury') {
-      if (!isAdmin(telegramId)) {
+      if (!(await isSuperAdminOrHigherRBAC(telegramId))) {
         return res.status(403).json({ success: false, error: 'Unauthorized. Admins only.' });
       }
       if (!treasurySigner) throw new Error('Treasury not configured');
@@ -2296,7 +2339,7 @@ app.post('/api/swap', async (req, res) => {
 
     let result;
     if (mode === 'treasury') {
-      if (!isAdmin(telegramId)) {
+      if (!(await isSuperAdminOrHigherRBAC(telegramId))) {
         return res.status(403).json({ success: false, error: 'Unauthorized. Admins only.' });
       }
       if (!treasurySigner) throw new Error('Treasury not configured');
@@ -2358,7 +2401,7 @@ interface PendingWinner {
 const pendingTriviaWinners = new Map<number, PendingWinner[]>();
 
 bot.command('stop_trivia', async (ctx) => {
-  if (!isAdmin(ctx.from!.id)) return ctx.reply('⛔ Only admins can stop a trivia game.');
+  if (!(await isModOrHigher(ctx.from!.id))) return ctx.reply('⛔ Only admins can stop a trivia game.');
   
   const session = activeTriviaGames.get(ctx.chat.id);
   if (!session) {
@@ -2372,7 +2415,7 @@ bot.command('stop_trivia', async (ctx) => {
 });
 
 bot.command('start_trivia', async (ctx) => {
-  if (!isAdmin(ctx.from!.id)) return ctx.reply('⛔ Only admins can start a trivia game.');
+  if (!(await isModOrHigher(ctx.from!.id))) return ctx.reply('⛔ Only admins can start a trivia game.');
   
   if (activeTriviaGames.has(ctx.chat.id)) {
     return ctx.reply('⚠️ A trivia game is already running in this chat!');
@@ -2571,7 +2614,7 @@ async function endTriviaGame(ctx: any) {
 // Command: /payout — View current reward config & pending winners
 bot.command(['payout', `payout@${BOT_USERNAME}`], async (ctx) => {
   const senderId = ctx.from?.id;
-  if (!senderId || (!isAdmin(senderId) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
+  if (!senderId || (!(await isSuperAdminOrHigherRBAC(senderId)) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
     return ctx.reply('⛔ Unauthorized. Only admins can view payout details.');
   }
 
@@ -2615,7 +2658,7 @@ bot.command(['payout', `payout@${BOT_USERNAME}`], async (ctx) => {
 // Command: /payout_trivia <1st_amount> [2nd_amount] [3rd_amount]
 bot.command(['payout_trivia', `payout_trivia@${BOT_USERNAME}`], async (ctx) => {
   const senderId = ctx.from?.id;
-  if (!senderId || (!isAdmin(senderId) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
+  if (!senderId || (!(await isSuperAdminOrHigherRBAC(senderId)) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
     return ctx.reply('⛔ Unauthorized. Only admins can execute trivia payouts.');
   }
 
@@ -2769,7 +2812,7 @@ bot.command(['payout_trivia', `payout_trivia@${BOT_USERNAME}`], async (ctx) => {
 // Command: /skip_payout
 bot.command(['skip_payout', `skip_payout@${BOT_USERNAME}`], async (ctx) => {
   const senderId = ctx.from?.id;
-  if (!senderId || (!isAdmin(senderId) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
+  if (!senderId || (!(await isSuperAdminOrHigherRBAC(senderId)) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
     return ctx.reply('⛔ Unauthorized.');
   }
 
@@ -2809,6 +2852,7 @@ async function launchBotWithRetry(maxRetries = 5, initialDelayMs = 3000) {
         { command: 'removeadmin', description: 'Remove admin privileges (Owner)' },
         { command: 'roles', description: 'List all project staff roles' },
         { command: 'myrole', description: 'Check your role in this project' },
+        { command: 'selectproject', description: 'Switch active project for DM management' },
         { command: 'rbachelp', description: 'View RBAC role hierarchy & commands' },
       ]).catch(err => console.error('Failed to set commands menu:', err));
 

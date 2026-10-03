@@ -48,6 +48,24 @@ export const cacheUserMiddleware: MiddlewareFn<Context> = async (ctx, next) => {
       from.last_name || null
     ).catch(() => {});
   }
+
+  // Also cache users mentioned via text_mention entities in group messages.
+  // text_mention entities include the full user object (with numeric ID),
+  // unlike plain @mention entities which only have the username text.
+  const message = (ctx as any).message;
+  if (message?.entities) {
+    for (const entity of message.entities) {
+      if (entity.type === 'text_mention' && entity.user && !entity.user.is_bot) {
+        upsertUserCache(
+          entity.user.id,
+          entity.user.username || null,
+          entity.user.first_name || null,
+          entity.user.last_name || null
+        ).catch(() => {});
+      }
+    }
+  }
+
   return next();
 };
 

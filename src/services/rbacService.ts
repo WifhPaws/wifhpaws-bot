@@ -79,7 +79,13 @@ export async function upsertUserCache(
 
 /**
  * Resolves a @username (case-insensitive) to its cached numeric Telegram ID.
- * Returns null if the user has never interacted with the bot.
+ *
+ * Resolution order:
+ *  1. Check `telegram_user_cache` (new RBAC cache, populated by middleware).
+ *  2. Fall back to the existing `users` table (legacy — already has username
+ *     for any user with a wallet / paw-points).
+ *
+ * Returns null only if the user has never interacted with the bot at all.
  */
 export async function resolveUsernameToId(
   handle: string
@@ -88,14 +94,39 @@ export async function resolveUsernameToId(
   const clean = handle.replace(/^@/, '').trim().toLowerCase();
   if (!clean) return null;
 
-  const { data, error } = await sb
+  // 1️⃣  Try the dedicated RBAC cache first
+  const { data: cacheHit } = await sb
     .from('telegram_user_cache')
     .select('*')
     .ilike('username', clean)
     .single();
 
-  if (error || !data) return null;
-  return data as TelegramUserCacheEntry;
+  if (cacheHit) return cacheHit as TelegramUserCacheEntry;
+
+  // 2️⃣  Fall back to the existing `users` table (has telegram_id + username)
+  const { data: legacyHit } = await sb
+    .from('users')
+    .select('telegram_id, username')
+    .ilike('username', clean)
+    .single();
+
+  if (legacyHit) {
+    // Backfill the cache so future lookups are fast
+    await upsertUserCache(
+      legacyHit.telegram_id,
+      legacyHit.username ?? null
+    );
+
+    return {
+      telegram_id: legacyHit.telegram_id,
+      username: legacyHit.username?.toLowerCase() ?? null,
+      first_name: null,
+      last_name: null,
+      last_seen_at: new Date().toISOString(),
+    } as TelegramUserCacheEntry;
+  }
+
+  return null;
 }
 
 /**
@@ -347,4 +378,105 @@ export async function hasMinimumRole(
   };
 
   return weights[effectiveRole] >= weights[minimumRole];
+}
+
+/**
+ * Get all projects a user has a role in.
+ * Used for DM-based admin commands where the user needs to pick which project to manage.
+ * Global Masters get ALL projects.
+ */
+export async function getProjectsForUser(
+  telegramId: number
+): Promise<ProjectInstance[]> {
+  const sb = getClient();
+
+  // Global Masters see all projects
+  if (isGlobalMaster(telegramId)) {
+    const { data, error } = await sb
+      .from('project_instances')
+      .select('*')
+      .order('created_at', { ascending: false });
+    return (data || []) as ProjectInstance[];
+  }
+
+  // Everyone else: find projects where they have a role
+  const { data: roles, error: rolesErr } = await sb
+    .from('project_roles')
+    .select('project_id')
+    .eq('telegram_id', telegramId);
+
+  if (rolesErr || !roles || roles.length === 0) return [];
+
+  const projectIds = [...new Set(roles.map((r: any) => r.project_id))];
+  const { data: projects, error: projErr } = await sb
+    .from('project_instances')
+    .select('*')
+    .in('id', projectIds)
+    .order('created_at', { ascending: false });
+
+  return (projects || []) as ProjectInstance[];
+}
+
+/**
+ * Checks if a user holds ANY role (mod or above) in ANY project.
+ * Used to determine if a user should see the Admin Panel button
+ * in their private DM wallet dashboard.
+ *
+ * This bridges the gap between the legacy isAdmin() (env-based)
+ * and the new RBAC system (project_roles table).
+ */
+export async function hasAnyRbacRole(telegramId: number): Promise<boolean> {
+  if (isGlobalMaster(telegramId)) {
+    console.log(`[RBAC DEBUG] hasAnyRbacRole(${telegramId}): is GlobalMaster → true`);
+    return true;
+  }
+
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('project_roles')
+    .select('id, role')
+    .eq('telegram_id', telegramId)
+    .limit(1);
+
+  const result = !error && !!data && data.length > 0;
+  console.log(`[RBAC DEBUG] hasAnyRbacRole(${telegramId}): data=${JSON.stringify(data)}, error=${JSON.stringify(error)}, result=${result}`);
+  return result;
+}
+
+/**
+ * Returns the highest RBAC role a user holds across ALL projects.
+ * Returns null if they have no role in any project.
+ */
+export async function getHighestRoleAcrossProjects(
+  telegramId: number
+): Promise<RbacRole | null> {
+  if (isGlobalMaster(telegramId)) return 'global_master';
+
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('project_roles')
+    .select('role')
+    .eq('telegram_id', telegramId);
+
+  if (error || !data || data.length === 0) return null;
+
+  const weights: Record<RbacRole, number> = {
+    global_master: 100,
+    project_owner: 80,
+    super_admin: 60,
+    mod: 40,
+  };
+
+  let highest: RbacRole | null = null;
+  let highestWeight = 0;
+
+  for (const row of data) {
+    const role = row.role as RbacRole;
+    if (weights[role] > highestWeight) {
+      highest = role;
+      highestWeight = weights[role];
+    }
+  }
+
+  return highest;
 }
