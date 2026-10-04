@@ -66,15 +66,29 @@ export async function upsertUserCache(
   lastName: string | null = null
 ): Promise<void> {
   const sb = getClient();
+  const cleanUsername = username?.toLowerCase().replace(/^@/, '') || null;
+  const now = new Date().toISOString();
   const row: Record<string, unknown> = {
     telegram_id: telegramId,
-    username: username?.toLowerCase().replace(/^@/, '') || null,
+    username: cleanUsername,
     first_name: firstName,
     last_name: lastName,
-    last_seen_at: new Date().toISOString(),
+    last_seen_at: now,
   };
 
   await sb.from('telegram_user_cache').upsert(row, { onConflict: 'telegram_id' });
+
+  // Guarantee row in public.users exists so they are never missing from users table
+  try {
+    const userRow: Record<string, unknown> = {
+      telegram_id: telegramId,
+      updated_at: now,
+    };
+    if (cleanUsername) userRow.username = cleanUsername;
+    await sb.from('users').upsert(userRow, { onConflict: 'telegram_id' });
+  } catch (err) {
+    // Non-blocking fallback
+  }
 }
 
 /**
@@ -82,8 +96,9 @@ export async function upsertUserCache(
  *
  * Resolution order:
  *  1. Check `telegram_user_cache` (new RBAC cache, populated by middleware).
- *  2. Fall back to the existing `users` table (legacy — already has username
- *     for any user with a wallet / paw-points).
+ *  2. Fall back to the existing `users` table.
+ *  3. Check `project_roles` table (e.g. appointed super admins / mods).
+ *  4. Check `admins` table.
  *
  * Returns null only if the user has never interacted with the bot at all.
  */
@@ -99,16 +114,27 @@ export async function resolveUsernameToId(
     .from('telegram_user_cache')
     .select('*')
     .ilike('username', clean)
-    .single();
+    .limit(1)
+    .maybeSingle();
 
-  if (cacheHit) return cacheHit as TelegramUserCacheEntry;
+  if (cacheHit) {
+    // Backfill users table if missing
+    try {
+      await sb.from('users').upsert(
+        { telegram_id: cacheHit.telegram_id, username: cacheHit.username, updated_at: new Date().toISOString() },
+        { onConflict: 'telegram_id' }
+      );
+    } catch {}
+    return cacheHit as TelegramUserCacheEntry;
+  }
 
-  // 2️⃣  Fall back to the existing `users` table (has telegram_id + username)
+  // 2️⃣  Check the existing `users` table (has telegram_id + username)
   const { data: legacyHit } = await sb
     .from('users')
     .select('telegram_id, username')
     .ilike('username', clean)
-    .single();
+    .limit(1)
+    .maybeSingle();
 
   if (legacyHit) {
     // Backfill the cache so future lookups are fast
@@ -120,6 +146,44 @@ export async function resolveUsernameToId(
     return {
       telegram_id: legacyHit.telegram_id,
       username: legacyHit.username?.toLowerCase() ?? null,
+      first_name: null,
+      last_name: null,
+      last_seen_at: new Date().toISOString(),
+    } as TelegramUserCacheEntry;
+  }
+
+  // 3️⃣  Check project_roles table (super_admins, mods, owners)
+  const { data: roleHit } = await sb
+    .from('project_roles')
+    .select('telegram_id, username')
+    .ilike('username', clean)
+    .limit(1)
+    .maybeSingle();
+
+  if (roleHit) {
+    await upsertUserCache(roleHit.telegram_id, roleHit.username ?? clean);
+    return {
+      telegram_id: roleHit.telegram_id,
+      username: roleHit.username?.toLowerCase() ?? clean,
+      first_name: null,
+      last_name: null,
+      last_seen_at: new Date().toISOString(),
+    } as TelegramUserCacheEntry;
+  }
+
+  // 4️⃣  Check admins table
+  const { data: adminHit } = await sb
+    .from('admins')
+    .select('telegram_id, username')
+    .ilike('username', clean)
+    .limit(1)
+    .maybeSingle();
+
+  if (adminHit) {
+    await upsertUserCache(adminHit.telegram_id, adminHit.username ?? clean);
+    return {
+      telegram_id: adminHit.telegram_id,
+      username: adminHit.username?.toLowerCase() ?? clean,
       first_name: null,
       last_name: null,
       last_seen_at: new Date().toISOString(),
@@ -321,6 +385,20 @@ export async function setUserRole(
 
   if (error || !data) {
     throw new Error(`Failed to set role: ${error?.message || 'Unknown error'}`);
+  }
+
+  // Ensure user is in telegram_user_cache AND public.users
+  const cleanUsername = username?.toLowerCase().replace(/^@/, '') || null;
+  await upsertUserCache(telegramId, cleanUsername);
+
+  // If role is super_admin, project_owner, or global_master, also sync to admins table
+  if (role === 'super_admin' || role === 'project_owner' || role === 'global_master') {
+    try {
+      await sb.from('admins').upsert(
+        { telegram_id: telegramId, username: cleanUsername },
+        { onConflict: 'telegram_id' }
+      );
+    } catch {}
   }
 
   return data as ProjectRole;

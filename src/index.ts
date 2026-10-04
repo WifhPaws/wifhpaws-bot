@@ -345,12 +345,14 @@ async function getOrCreateWallet(telegramId: number): Promise<any> {
     .single();
 
   if (existingWallet) {
-    // Ensure users.wallet_address is always in sync with user_wallets
+    // Ensure users.wallet_address is always in sync with user_wallets and record exists in users
     await supabase
       .from('users')
-      .update({ wallet_address: existingWallet.public_address, updated_at: new Date().toISOString() })
-      .eq('telegram_id', telegramId)
-      .is('wallet_address', null);
+      .upsert({
+        telegram_id: telegramId,
+        wallet_address: existingWallet.public_address,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'telegram_id' });
     return existingWallet;
   }
 
@@ -373,11 +375,14 @@ async function getOrCreateWallet(telegramId: number): Promise<any> {
     throw new Error(`Failed to create wallet: ${error?.message}`);
   }
 
-  // Update wallet_address in users table
+  // Ensure record exists in users table with new wallet address
   await supabase
     .from('users')
-    .update({ wallet_address: newWallet.address, updated_at: new Date().toISOString() })
-    .eq('telegram_id', telegramId);
+    .upsert({
+      telegram_id: telegramId,
+      wallet_address: newWallet.address,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'telegram_id' });
 
   return createdWallet;
 }
@@ -445,28 +450,140 @@ async function isSuperAdminForChat(chatId: number, userId: number): Promise<bool
   return checkPermission(chatId, userId, 'super_admin');
 }
 
-async function getTargetUser(ctx: Context): Promise<{ id: number; username?: string } | null> {
+/**
+ * Resolves a username or numeric ID across all sources:
+ * 1. users table
+ * 2. telegram_user_cache
+ * 3. project_roles table (super admins, mods, project owners)
+ * 4. admins table
+ * 5. Telegram getChat API
+ * Automatically guarantees the resolved user is recorded in public.users.
+ */
+async function resolveRecipientUser(
+  rawInput: string,
+  ctx?: Context
+): Promise<{ telegram_id: number; username?: string | null } | null> {
+  const target = rawInput.replace(/^@/, '').trim();
+  if (!target) return null;
+
+  if (/^\d+$/.test(target)) {
+    const numericId = Number(target);
+    return { telegram_id: numericId };
+  }
+
+  // 1. Check users table
+  const { data: dbUser } = await supabase
+    .from('users')
+    .select('telegram_id, username')
+    .ilike('username', target)
+    .limit(1)
+    .maybeSingle();
+
+  if (dbUser) {
+    return { telegram_id: dbUser.telegram_id, username: dbUser.username };
+  }
+
+  // 2. Check telegram_user_cache
+  const { data: cacheUser } = await supabase
+    .from('telegram_user_cache')
+    .select('telegram_id, username')
+    .ilike('username', target)
+    .limit(1)
+    .maybeSingle();
+
+  if (cacheUser) {
+    await supabase.from('users').upsert(
+      { telegram_id: cacheUser.telegram_id, username: cacheUser.username, updated_at: new Date().toISOString() },
+      { onConflict: 'telegram_id' }
+    );
+    return { telegram_id: cacheUser.telegram_id, username: cacheUser.username };
+  }
+
+  // 3. Check project_roles (super_admin, mod, project_owner)
+  const { data: roleUser } = await supabase
+    .from('project_roles')
+    .select('telegram_id, username')
+    .ilike('username', target)
+    .limit(1)
+    .maybeSingle();
+
+  if (roleUser) {
+    await upsertUserCache(roleUser.telegram_id, roleUser.username || target);
+    return { telegram_id: roleUser.telegram_id, username: roleUser.username || target };
+  }
+
+  // 4. Check admins table
+  const { data: adminUser } = await supabase
+    .from('admins')
+    .select('telegram_id, username')
+    .ilike('username', target)
+    .limit(1)
+    .maybeSingle();
+
+  if (adminUser) {
+    await upsertUserCache(adminUser.telegram_id, adminUser.username || target);
+    return { telegram_id: adminUser.telegram_id, username: adminUser.username || target };
+  }
+
+  // 5. Telegram getChat API fallback
+  if (ctx && ctx.telegram) {
+    try {
+      const chatInfo = await ctx.telegram.getChat('@' + target);
+      if (chatInfo && 'id' in chatInfo) {
+        const uId = chatInfo.id;
+        const uName = ('username' in chatInfo && chatInfo.username) ? chatInfo.username : target;
+        await upsertUserCache(
+          uId,
+          uName,
+          ('first_name' in chatInfo && chatInfo.first_name) ? chatInfo.first_name : null,
+          ('last_name' in chatInfo && chatInfo.last_name) ? chatInfo.last_name : null
+        );
+        return { telegram_id: uId, username: uName };
+      }
+    } catch {
+      // Chat not accessible via API
+    }
+  }
+
+  return null;
+}
+
+async function getTargetUser(ctx: Context, fallbackInput?: string): Promise<{ id: number; username?: string } | null> {
   const message = ctx.message as any;
-  if (!message || !message.text) return null;
+  if (!message) return null;
 
   if (message.reply_to_message?.from) {
+    const from = message.reply_to_message.from;
+    await upsertUserCache(from.id, from.username || null, from.first_name || null, from.last_name || null);
     return {
-      id: message.reply_to_message.from.id,
-      username: message.reply_to_message.from.username,
+      id: from.id,
+      username: from.username,
     };
   }
 
-  const args = message.text.split(' ').slice(1);
-  if (args.length > 0) {
-    const target = args[0].replace('@', '');
-    if (!isNaN(Number(target))) return { id: Number(target) };
+  // Check text_mention entities
+  const entities = message.entities || [];
+  for (const entity of entities) {
+    if (entity.type === 'text_mention' && entity.user) {
+      const u = entity.user;
+      await upsertUserCache(u.id, u.username || null, u.first_name || null, u.last_name || null);
+      return { id: u.id, username: u.username };
+    }
+  }
 
-    const { data } = await supabase
-      .from('users')
-      .select('telegram_id, username')
-      .ilike('username', target)
-      .single();
-    if (data) return { id: data.telegram_id, username: data.username };
+  let targetArg = fallbackInput?.trim();
+  if (!targetArg && message.text) {
+    const args = message.text.trim().split(/\s+/).slice(1);
+    if (args.length > 0) {
+      targetArg = args[0];
+    }
+  }
+
+  if (targetArg) {
+    const resolved = await resolveRecipientUser(targetArg, ctx);
+    if (resolved) {
+      return { id: resolved.telegram_id, username: resolved.username || undefined };
+    }
   }
 
   return null;
@@ -478,6 +595,18 @@ async function getTargetUser(ctx: Context): Promise<{ id: number; username?: str
 
 bot.command(['start', `start@${BOT_USERNAME}`], async (ctx) => {
   const userId = ctx.from?.id;
+
+  // Auto-register and pre-provision wallet for any user running /start
+  if (userId && ctx.from && !ctx.from.is_bot) {
+    upsertUserCache(
+      userId,
+      ctx.from.username || null,
+      ctx.from.first_name || null,
+      ctx.from.last_name || null
+    ).catch(() => {});
+    getOrCreateWallet(userId).catch(() => {});
+  }
+
   const message = ctx.message as any;
   const args = message?.text?.split(/\s+/)[1];
 
@@ -542,6 +671,17 @@ bot.on('new_chat_members', async (ctx) => {
   const newMembers = ctx.message.new_chat_members;
   for (const member of newMembers) {
     if (!member.is_bot) {
+      // 1. Immediately cache user in telegram_user_cache & public.users
+      upsertUserCache(
+        member.id,
+        member.username || null,
+        member.first_name || null,
+        member.last_name || null
+      ).catch(() => {});
+
+      // 2. Pre-provision custodial wallet so user is ready for airdrops & rewards
+      getOrCreateWallet(member.id).catch(() => {});
+
       const usernameStr = member.username ? `@${member.username}` : member.first_name;
       try {
         const msg = await ctx.reply(
@@ -561,9 +701,14 @@ bot.on('new_chat_members', async (ctx) => {
         console.error('Failed to send welcome message:', e.message);
       }
       
-      // Update welcome_sent in DB
+      // 3. Mark welcome_sent in public.users via upsert
       try {
-        await supabase.from('users').update({ welcome_sent: true }).eq('telegram_id', member.id);
+        await supabase.from('users').upsert({
+          telegram_id: member.id,
+          username: member.username?.toLowerCase() || null,
+          welcome_sent: true,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'telegram_id' });
       } catch (e: any) {
         console.error('Failed to update welcome_sent:', e.message);
       }
@@ -1266,13 +1411,8 @@ bot.command(['send', `send@${BOT_USERNAME}`], async (ctx) => {
     if ((ethers.isAddress as any)(recipientInput)) {
       destinationAddress = recipientInput;
     } else {
-      const cleanUsername = recipientInput.replace('@', '');
-      const { data: recipientUser } = await supabase
-        .from('users')
-        .select('telegram_id')
-        .ilike('username', cleanUsername)
-        .single();
-      if (!recipientUser) return ctx.reply(`\u274C Could not find a registered user named @${cleanUsername}.`);
+      const recipientUser = await resolveRecipientUser(recipientInput, ctx);
+      if (!recipientUser) return ctx.reply(`\u274C Could not find a registered user named ${recipientInput.startsWith('@') ? recipientInput : '@' + recipientInput}.`);
       const recipientWallet = await getOrCreateWallet(recipientUser.telegram_id);
       destinationAddress = recipientWallet.public_address;
     }
@@ -1355,13 +1495,8 @@ bot.command('tsend', async (ctx) => {
     if ((ethers.isAddress as any)(recipientInput)) {
       destinationAddress = recipientInput;
     } else {
-      const cleanUsername = recipientInput.replace('@', '');
-      const { data: recipientUser } = await supabase
-        .from('users')
-        .select('telegram_id')
-        .ilike('username', cleanUsername)
-        .single();
-      if (!recipientUser) return ctx.reply(`❌ Could not find a registered user named @${cleanUsername}.`);
+      const recipientUser = await resolveRecipientUser(recipientInput, ctx);
+      if (!recipientUser) return ctx.reply(`❌ Could not find a registered user named ${recipientInput.startsWith('@') ? recipientInput : '@' + recipientInput}.`);
       const recipientWallet = await getOrCreateWallet(recipientUser.telegram_id);
       destinationAddress = recipientWallet.public_address;
     }
@@ -1562,13 +1697,8 @@ bot.command('dsend', async (ctx) => {
     if ((ethers.isAddress as any)(recipientInput)) {
       destinationAddress = recipientInput;
     } else {
-      const cleanUsername = recipientInput.replace('@', '');
-      const { data: recipientUser } = await supabase
-        .from('users')
-        .select('telegram_id')
-        .ilike('username', cleanUsername)
-        .single();
-      if (!recipientUser) return ctx.reply(`❌ Could not find a registered user named @${cleanUsername}.`);
+      const recipientUser = await resolveRecipientUser(recipientInput, ctx);
+      if (!recipientUser) return ctx.reply(`❌ Could not find a registered user named ${recipientInput.startsWith('@') ? recipientInput : '@' + recipientInput}.`);
       const recipientWallet = await getOrCreateWallet(recipientUser.telegram_id);
       destinationAddress = recipientWallet.public_address;
     }
@@ -1776,19 +1906,15 @@ bot.command('makeadmin', async (ctx) => {
         return ctx.reply("\u26A0\uFE0F Please provide a username. Example: /makeadmin @username");
     }
 
-    const { data: userData, error } = await supabase
-        .from('users')
-        .select('telegram_id')
-        .ilike('username', targetUsername)
-        .single();
+    const userData = await resolveRecipientUser(targetUsername, ctx);
 
-    if (error || !userData) {
-        return ctx.reply(`\u274C Could not find a user with the handle @${targetUsername}. Make sure they have started the bot (/start) at least once!`);
+    if (!userData) {
+        return ctx.reply(`\u274C Could not find a user with the handle @${targetUsername}. Make sure they have interacted with the bot or group!`);
     }
 
     const { error: adminError } = await supabase
         .from('admins')
-        .upsert({ telegram_id: userData.telegram_id, username: targetUsername });
+        .upsert({ telegram_id: userData.telegram_id, username: userData.username || targetUsername });
 
     if (adminError) {
         return ctx.reply(`\u274C Failed to grant admin privileges in the database. (Make sure the 'admins' table exists). Details: ${adminError.message}`);
@@ -1857,7 +1983,7 @@ bot.command('airdrop', async (ctx) => {
       destinationAddress = targetInput;
       displayRecipient = 'External Wallet';
     } else {
-      const targetUser = await getTargetUser(ctx);
+      const targetUser = await getTargetUser(ctx, targetInput);
       if (!targetUser) return ctx.reply('\u274C Target user not found.');
       const wallet = await getOrCreateWallet(targetUser.id);
       destinationAddress = wallet.public_address;
@@ -2059,11 +2185,16 @@ bot.on('message', async (ctx, next) => {
     if (/^0x[a-fA-F0-9]{40}$/i.test(input)) {
       try {
         const now = new Date().toISOString();
-        // Update both tables so they stay in sync
+        // Upsert both tables so they stay in sync and user is guaranteed to exist
         await supabase
           .from('users')
-          .update({ wallet_address: input, onboarded_at: now, updated_at: now })
-          .eq('telegram_id', ctx.from.id);
+          .upsert({
+            telegram_id: ctx.from.id,
+            wallet_address: input,
+            onboarded_at: now,
+            updated_at: now,
+            ...(ctx.from.username ? { username: ctx.from.username } : {})
+          }, { onConflict: 'telegram_id' });
 
         // Also upsert into user_wallets so the linked address is stored there too
         await supabase
