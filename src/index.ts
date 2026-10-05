@@ -1104,8 +1104,6 @@ async function sendAdminPanel(ctx: any) {
     return ctx.reply('⛔ Unauthorized.');
   }
 
-  const hatcheryUrl = WEBAPP_URL.endsWith('/') ? WEBAPP_URL + 'hatchery.html' : WEBAPP_URL + '/hatchery.html';
-
   const adminKeyboard: any[] = [
     [
       { text: '🏦 View Treasury', callback_data: 'admin_treasury' },
@@ -1118,9 +1116,6 @@ async function sendAdminPanel(ctx: any) {
     [
       { text: '💬 Trivia Settings', callback_data: 'admin_trivia' },
       { text: '❓ Help Guide', callback_data: 'admin_help' },
-    ],
-    [
-      { text: '🧬 WifhPaws Hatchery', web_app: { url: hatcheryUrl } },
     ],
     [
       { text: '🏛️ Treasury Wallet', callback_data: 'action_treasury_home' },
@@ -2358,6 +2353,17 @@ app.get('/admin', (req, res) => {
     return res.status(200).send(html);
   } else {
     return res.status(404).send('Admin panel not found.');
+  }
+});
+
+// WifhPaws Hatchery Mini-App (/hatchery)
+app.get('/hatchery', (req, res) => {
+  const hatcheryPath = path.join(process.cwd(), 'public', 'hatchery.html');
+  if (fs.existsSync(hatcheryPath)) {
+    res.setHeader('Content-Type', 'text/html');
+    return res.status(200).sendFile(hatcheryPath);
+  } else {
+    return res.status(404).send('Hatchery not found.');
   }
 });
 
