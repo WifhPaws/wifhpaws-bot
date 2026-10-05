@@ -75,7 +75,7 @@ export async function sendDevPanelMenu(ctx: Context, deps: DevPanelDeps) {
 
     const keyboard = Markup.inlineKeyboard([
       [
-        Markup.button.webApp('🧬 WifhPaws Hatchery', hatcheryUrl)
+        { text: '🧬 WifhPaws Hatchery', web_app: { url: hatcheryUrl } } as any
       ],
       [
         Markup.button.callback('📥 Receive', 'dev_receive'),
