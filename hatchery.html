@@ -210,7 +210,7 @@
 
     <div class="container">
         <div class="pod-container">
-            <img id="puppy-img" src="images/hatchery/puppy_awake.jpg" alt="Incubation Puppy" class="puppy-image">
+            <img id="puppy-img" src="public/images/hatchery/puppy_awake.jpg" alt="Incubation Puppy" class="puppy-image">
         </div>
 
         <div class="control-panel">
@@ -311,7 +311,7 @@
             
             if (isNightMode) {
                 body.classList.add('night-mode');
-                puppyImg.src = "images/hatchery/puppy_sleeping.jpg";
+                puppyImg.src = "public/images/hatchery/puppy_sleeping.jpg";
                 updateStatus("Resting and growing...");
                 sleepBtn.innerHTML = '<span class="emoji-icon">☀️</span> Wake Up';
                 increaseGrowth(2); // Passive growth from resting
@@ -321,7 +321,7 @@
                 tg.setBackgroundColor('#050706');
             } else {
                 body.classList.remove('night-mode');
-                puppyImg.src = "images/hatchery/puppy_awake.jpg";
+                puppyImg.src = "public/images/hatchery/puppy_awake.jpg";
                 updateStatus("Wide awake!");
                 sleepBtn.innerHTML = '<span class="emoji-icon">🌙</span> Sleep / Rest';
                 
