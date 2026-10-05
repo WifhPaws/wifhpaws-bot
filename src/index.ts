@@ -2575,7 +2575,7 @@ bot.command('start_trivia', async (ctx) => {
     };
     activeTriviaGames.set(ctx.chat.id, session);
 
-    await ctx.reply(`🧠 *Trivia Game Started!* 🧠\n\nThere are ${questions.length} questions. You have 60 seconds per question — everyone who answers correctly gets 1 point!\n\nGet ready...`, { parse_mode: 'Markdown' });
+    await ctx.reply(`🧠 *Trivia Game Started!* 🧠\n\nThere are ${questions.length} questions. You have 30 seconds per question — everyone who answers correctly gets 1 point!\n\nGet ready...`, { parse_mode: 'Markdown' });
     
     setTimeout(() => sendNextTriviaQuestion(ctx), 3000);
   } catch (err: any) {
@@ -2601,7 +2601,7 @@ async function sendNextTriviaQuestion(ctx: any) {
     return [{ text: opt, callback_data: `tq_${idx}` }];
   });
 
-  const msg = await ctx.reply(`📝 *Question ${session.currentIdx + 1} of ${session.questions.length}:* (⏳ 60s)\n\n${q.question}`, {
+  const msg = await ctx.reply(`📝 *Question ${session.currentIdx + 1} of ${session.questions.length}:* (⏳ 30s)\n\n${q.question}`, {
     parse_mode: 'Markdown',
     reply_markup: { inline_keyboard: keyboard }
   });
@@ -2641,7 +2641,7 @@ async function sendNextTriviaQuestion(ctx: any) {
 
     session.currentIdx++;
     setTimeout(() => sendNextTriviaQuestion(ctx), 4000);
-  }, 60000);
+  }, 30000);
 }
 
 bot.action(/tq_(\d+)/, async (ctx) => {
@@ -2779,51 +2779,162 @@ async function endTriviaGame(ctx: any) {
   }
 }
 
-// Command: /payout — View current reward config & pending winners
+// Command: /payout — Execute payout using predetermined config amounts
 bot.command(['payout', `payout@${BOT_USERNAME}`], async (ctx) => {
   const senderId = ctx.from?.id;
   if (!senderId || (!(await isSuperAdminOrHigherRBAC(senderId)) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
-    return ctx.reply('⛔ Unauthorized. Only admins can view payout details.');
+    return ctx.reply('⛔ Unauthorized. Only admins can execute trivia payouts.');
   }
 
+  const pending = pendingTriviaWinners.get(ctx.chat.id);
+  if (!pending || pending.length === 0) {
+    // No pending winners — just show the dashboard info
+    try {
+      const cfg = await getPayoutConfig();
+      let text = `💰 *Trivia Payout Dashboard*\n\n`;
+      text += `🏆 *Configured Rewards (per game):*\n`;
+      text += `🥇 1st Place: *${cfg.first} WIFH*\n`;
+      text += `🥈 2nd Place: *${cfg.second} WIFH*\n`;
+      text += `🥉 3rd Place: *${cfg.third} WIFH*\n\n`;
+      text += `ℹ️ _No pending trivia winners in this chat._`;
+      return ctx.reply(text, { parse_mode: 'Markdown' });
+    } catch (err: any) {
+      console.error('[/payout Error]:', err?.message || err);
+      return ctx.reply('❌ Failed to load payout information. Please try again.');
+    }
+  }
+
+  // Pending winners exist — execute payout using config defaults
+  let amounts: number[] = [];
   try {
     const cfg = await getPayoutConfig();
-    const pending = pendingTriviaWinners.get(ctx.chat.id);
+    if (cfg.first > 0) amounts.push(cfg.first);
+    if (cfg.second > 0) amounts.push(cfg.second);
+    if (cfg.third > 0) amounts.push(cfg.third);
+  } catch (cfgErr: any) {
+    console.error('[Payout Config Fetch Error]:', cfgErr?.message || cfgErr);
+  }
 
-    let text = `💰 *Trivia Payout Dashboard*\n\n`;
+  if (amounts.length === 0) {
+    return ctx.reply(
+      '⚠️ *No default reward amounts configured.*\n\n' +
+      'Please set default rewards in the Admin Panel → 🎮 Trivia Settings,\n' +
+      'or use `/payout_trivia <1st> [2nd] [3rd]` to specify amounts manually.',
+      { parse_mode: 'Markdown' }
+    );
+  }
 
-    // Current config
-    text += `🏆 *Configured Rewards (per game):*\n`;
-    text += `🥇 1st Place: *${cfg.first} WIFH*\n`;
-    text += `🥈 2nd Place: *${cfg.second} WIFH*\n`;
-    text += `🥉 3rd Place: *${cfg.third} WIFH*\n\n`;
+  // Show config being used
+  let configText = `💰 *Paying out using configured rewards:*\n`;
+  configText += `🥇 1st: ${amounts[0] || 0} WIFH`;
+  if (amounts[1]) configText += ` | 🥈 2nd: ${amounts[1]} WIFH`;
+  if (amounts[2]) configText += ` | 🥉 3rd: ${amounts[2]} WIFH`;
+  configText += `\n\n⏳ *Pending Winners:*\n`;
+  pending.forEach((w) => {
+    const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
+    configText += `${medal} ${w.name}\n`;
+  });
+  await ctx.reply(configText, { parse_mode: 'Markdown' });
 
-    // Pending winners
-    if (pending && pending.length > 0) {
-      text += `⏳ *Pending Winners (this chat):*\n`;
-      pending.forEach((w) => {
-        const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
-        let walletText = '_No wallet_';
-        if (w.wallet && w.wallet.length >= 10) {
-          walletText = `\`${w.wallet.substring(0, 6)}...${w.wallet.substring(w.wallet.length - 4)}\``;
-        } else if (w.wallet) {
-          walletText = `\`${w.wallet}\``;
+  const statusMsg = await ctx.reply('⏳ Processing trivia payouts from Treasury...');
+
+  try {
+    const receiptLines: string[] = [];
+    const pConfig: PayoutConfig = {
+      first: amounts[0] || 0,
+      second: amounts[1] || 0,
+      third: amounts[2] || 0,
+    };
+
+    if (treasurySigner && WIFH_CONTRACT_ADDRESS) {
+      const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
+      const decimals = await contract.decimals();
+
+      for (let i = 0; i < pending.length && i < amounts.length; i++) {
+        const winner = pending[i];
+        const tokenAmount = amounts[i];
+        if (tokenAmount <= 0) continue;
+
+        const medal = winner.place === 1 ? '🥇' : (winner.place === 2 ? '🥈' : '🥉');
+
+        let targetAddress = winner.wallet;
+        if ((!targetAddress || !(ethers.isAddress as any)(targetAddress)) && winner.userId && winner.userId > 0) {
+          try {
+            const w = await getOrCreateWallet(winner.userId);
+            targetAddress = w?.public_address || '';
+          } catch (e) {
+            targetAddress = '';
+          }
         }
-        text += `${medal} ${w.name} — ${walletText}\n`;
-      });
-      text += `\n✅ *Ready to distribute!*`;
+        if ((!targetAddress || !(ethers.isAddress as any)(targetAddress)) && winner.name) {
+          try {
+            const cleanUsername = winner.name.replace('@', '').trim();
+            const { data: dbUser } = await supabase
+              .from('users')
+              .select('telegram_id')
+              .ilike('username', cleanUsername)
+              .maybeSingle();
+            if (dbUser && dbUser.telegram_id) {
+              const w = await getOrCreateWallet(dbUser.telegram_id);
+              targetAddress = w?.public_address || '';
+            }
+          } catch (e) {
+            targetAddress = '';
+          }
+        }
+
+        if (targetAddress && (ethers.isAddress as any)(targetAddress)) {
+          const userAmount = ethers.parseUnits(tokenAmount.toString(), decimals);
+          const feeAmount = userAmount / BigInt(100);
+          const totalRequired = userAmount + feeAmount;
+
+          const treasuryBalance = await contract.balanceOf(treasurySigner.address);
+          if (treasuryBalance >= totalRequired) {
+            const txUser = await contract.transfer(targetAddress, userAmount);
+            await txUser.wait();
+            if (feeAmount > 0n) {
+              await dispatchFeesToDevWallet(feeAmount, contract, treasurySigner);
+            }
+            receiptLines.push(`${medal} ${winner.name}: *${tokenAmount} WIFH*`);
+          } else {
+            receiptLines.push(`${medal} ${winner.name}: *${tokenAmount} WIFH* (⚠️ Insufficient Treasury Balance)`);
+          }
+        } else {
+          receiptLines.push(`${medal} ${winner.name}: *${tokenAmount} WIFH* (⚠️ No Wallet Linked)`);
+        }
+      }
     } else {
-      text += `ℹ️ _No pending trivia winners in this chat._`;
+      await airdropToWinners(pending, pConfig);
+      pending.forEach((w, idx) => {
+        const amt = amounts[idx] || 0;
+        if (amt > 0) {
+          const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
+          receiptLines.push(`${medal} ${w.name}: *${amt} WIFH*`);
+        }
+      });
     }
 
-    return ctx.reply(text, { parse_mode: 'Markdown' });
+    pendingTriviaWinners.delete(ctx.chat.id);
+
+    const receiptText =
+      `🎉 *AIRDROP / TRIVIA PAYOUT SUCCESSFUL!*\n\n` +
+      receiptLines.join('\n') +
+      `\n\n🐾 *The Hood has delivered!*`;
+
+    return ctx.telegram.editMessageText(
+      ctx.chat.id,
+      statusMsg.message_id,
+      undefined,
+      receiptText,
+      { parse_mode: 'Markdown' }
+    );
   } catch (err: any) {
-    console.error('[/payout Error]:', err?.message || err);
-    return ctx.reply('❌ Failed to load payout information. Please try again.');
+    console.error('[Trivia Payout Error]:', err);
+    return ctx.reply('❌ Payout failed. Please check treasury balance and try again.');
   }
 });
 
-// Command: /payout_trivia <1st_amount> [2nd_amount] [3rd_amount]
+// Command: /payout_trivia <1st_amount> [2nd_amount] [3rd_amount] — Manual amounts payout
 bot.command(['payout_trivia', `payout_trivia@${BOT_USERNAME}`], async (ctx) => {
   const senderId = ctx.from?.id;
   if (!senderId || (!(await isSuperAdminOrHigherRBAC(senderId)) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
@@ -2837,46 +2948,23 @@ bot.command(['payout_trivia', `payout_trivia@${BOT_USERNAME}`], async (ctx) => {
 
   const args = ctx.message.text.split(' ').filter(Boolean);
 
-  let amounts: number[] = [];
-
-  if (args.length >= 2) {
-    // Explicit amounts provided by admin
-    for (let i = 1; i < args.length && i <= 3; i++) {
-      const val = Number(args[i]);
-      if (!Number.isFinite(val) || val <= 0) {
-        return ctx.reply(`❌ Invalid amount '${args[i]}'. Please enter positive numerical amounts.`);
-      }
-      amounts.push(val);
-    }
-  } else {
-    // No arguments – fall back to Trivia Config Panel defaults
-    try {
-      const cfg = await getPayoutConfig();
-      if (cfg.first > 0) amounts.push(cfg.first);
-      if (cfg.second > 0) amounts.push(cfg.second);
-      if (cfg.third > 0) amounts.push(cfg.third);
-    } catch (cfgErr: any) {
-      console.error('[Payout Config Fetch Error]:', cfgErr?.message || cfgErr);
-    }
-
-    if (amounts.length === 0) {
-      return ctx.reply(
-        '⚠️ *No reward amounts specified and no defaults configured.*\n\n' +
-        'Please specify amounts manually:\n' +
-        '`/payout_trivia <1st> [2nd] [3rd]`\n\n' +
-        '_Or set default rewards in the Admin Panel → 🎮 Trivia Settings._',
-        { parse_mode: 'Markdown' }
-      );
-    }
-
-    // Notify admin that config defaults are being used
-    await ctx.reply(
-      `ℹ️ *Using Trivia Config Panel defaults:*\n` +
-      `🥇 1st: ${amounts[0] || 0} WIFH` +
-      (amounts[1] ? ` | 🥈 2nd: ${amounts[1]} WIFH` : '') +
-      (amounts[2] ? ` | 🥉 3rd: ${amounts[2]} WIFH` : ''),
+  if (args.length < 2) {
+    return ctx.reply(
+      '⚠️ *Please specify payout amounts manually:*\n\n' +
+      '`/payout_trivia <1st> [2nd] [3rd]`\n\n' +
+      '_Example: `/payout_trivia 100 50 25`_\n\n' +
+      '_Or use `/payout` to pay using the configured default rewards._',
       { parse_mode: 'Markdown' }
     );
+  }
+
+  let amounts: number[] = [];
+  for (let i = 1; i < args.length && i <= 3; i++) {
+    const val = Number(args[i]);
+    if (!Number.isFinite(val) || val <= 0) {
+      return ctx.reply(`❌ Invalid amount '${args[i]}'. Please enter positive numerical amounts.`);
+    }
+    amounts.push(val);
   }
 
   const statusMsg = await ctx.reply('⏳ Processing trivia payouts from Treasury...');
