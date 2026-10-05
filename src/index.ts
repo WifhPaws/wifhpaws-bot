@@ -1104,6 +1104,8 @@ async function sendAdminPanel(ctx: any) {
     return ctx.reply('⛔ Unauthorized.');
   }
 
+  const hatcheryUrl = WEBAPP_URL.endsWith('/') ? WEBAPP_URL + 'hatchery.html' : WEBAPP_URL + '/hatchery.html';
+
   const adminKeyboard: any[] = [
     [
       { text: '🏦 View Treasury', callback_data: 'admin_treasury' },
@@ -1116,6 +1118,9 @@ async function sendAdminPanel(ctx: any) {
     [
       { text: '💬 Trivia Settings', callback_data: 'admin_trivia' },
       { text: '❓ Help Guide', callback_data: 'admin_help' },
+    ],
+    [
+      { text: '🧬 WifhPaws Hatchery', web_app: { url: hatcheryUrl } },
     ],
     [
       { text: '🏛️ Treasury Wallet', callback_data: 'action_treasury_home' },

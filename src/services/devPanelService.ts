@@ -70,7 +70,13 @@ export async function sendDevPanelMenu(ctx: Context, deps: DevPanelDeps) {
       `_All collected fees and revenue streams route here._\n\n` +
       `Select an operation below:`;
 
+    const webAppUrl = process.env.WEBAPP_URL || 'https://wifhpaws.github.io/wifhpaws-bot/';
+    const hatcheryUrl = webAppUrl.endsWith('/') ? webAppUrl + 'hatchery.html' : webAppUrl + '/hatchery.html';
+
     const keyboard = Markup.inlineKeyboard([
+      [
+        Markup.button.webApp('🧬 WifhPaws Hatchery', hatcheryUrl)
+      ],
       [
         Markup.button.callback('📥 Receive', 'dev_receive'),
         Markup.button.callback('💸 Send', 'dev_send_guide'),

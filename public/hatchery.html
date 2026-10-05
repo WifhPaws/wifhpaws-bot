@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WifhPaws Hatchery</title>
+    <!-- Include Telegram WebApp JS -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0f0e;
+            --accent-green: #00ff66;
+            --accent-green-dim: rgba(0, 255, 102, 0.2);
+            --text-color: #e0e0e0;
+            --panel-bg: rgba(20, 25, 24, 0.8);
+            --border-glow: 0 0 10px var(--accent-green);
+        }
+
+        body.night-mode {
+            --bg-color: #050706;
+            --accent-green: #008833;
+            --accent-green-dim: rgba(0, 136, 51, 0.1);
+            --text-color: #888;
+            --border-glow: 0 0 5px var(--accent-green);
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            transition: background-color 0.5s ease, color 0.5s ease;
+            box-sizing: border-box;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        @media (min-width: 768px) {
+            .container {
+                flex-direction: row;
+                align-items: stretch;
+            }
+        }
+
+        .pod-container {
+            flex: 1;
+            position: relative;
+            border: 2px solid var(--accent-green);
+            border-radius: 20px;
+            padding: 20px;
+            background: radial-gradient(circle, var(--accent-green-dim) 0%, transparent 70%);
+            box-shadow: var(--border-glow);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 300px;
+            transition: border-color 0.5s ease, box-shadow 0.5s ease;
+            overflow: hidden;
+        }
+        
+        /* Sci-fi metallic top and bottom edges for the pod */
+        .pod-container::before, .pod-container::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 30px;
+            background: linear-gradient(to right, #333, #666, #333);
+            z-index: 10;
+        }
+        .pod-container::before { top: 0; border-top-left-radius: 18px; border-top-right-radius: 18px; }
+        .pod-container::after { bottom: 0; border-bottom-left-radius: 18px; border-bottom-right-radius: 18px; }
+
+        .puppy-image {
+            width: 80%;
+            max-width: 300px;
+            height: auto;
+            border-radius: 50%;
+            transition: opacity 0.3s ease;
+            position: relative;
+            z-index: 5;
+        }
+
+        .control-panel {
+            flex: 1;
+            background: var(--panel-bg);
+            border: 1px solid var(--accent-green);
+            border-radius: 15px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: inset 0 0 15px var(--accent-green-dim);
+            transition: border-color 0.5s ease, box-shadow 0.5s ease;
+            z-index: 15;
+        }
+
+        h1 {
+            color: var(--accent-green);
+            font-size: 1.5rem;
+            margin-top: 0;
+            text-align: center;
+            text-shadow: 0 0 5px var(--accent-green);
+            transition: color 0.5s ease, text-shadow 0.5s ease;
+        }
+
+        .status-readout {
+            margin-bottom: 20px;
+            flex-grow: 1;
+        }
+
+        .status-item {
+            margin: 10px 0;
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .status-value {
+            color: var(--accent-green);
+            font-weight: bold;
+            transition: color 0.5s ease;
+        }
+        
+        .sync-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: var(--accent-green);
+            border-radius: 50%;
+            margin-left: 5px;
+            box-shadow: 0 0 5px var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .btn {
+            background: transparent;
+            border: 1px solid var(--accent-green);
+            color: var(--accent-green);
+            padding: 12px;
+            border-radius: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: bold;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn:hover, .btn:active {
+            background: var(--accent-green-dim);
+            box-shadow: var(--border-glow);
+        }
+        
+        .btn-fetch {
+            border-color: #ff3333;
+            color: #ff3333;
+        }
+        .btn-fetch:hover, .btn-fetch:active {
+            background: rgba(255, 51, 51, 0.1);
+            box-shadow: 0 0 10px #ff3333;
+        }
+        
+        body.night-mode .btn-fetch {
+            border-color: #881111;
+            color: #881111;
+        }
+
+        .emoji-icon {
+            font-size: 1.2rem;
+        }
+        
+        #username-display {
+            font-style: italic;
+            opacity: 0.8;
+            margin-bottom: 10px;
+            text-align: center;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="pod-container">
+            <img id="puppy-img" src="images/hatchery/puppy_awake.jpg" alt="Incubation Puppy" class="puppy-image">
+        </div>
+
+        <div class="control-panel">
+            <h1>WifhPaws Hatchery</h1>
+            <div id="username-display">Initializing user...</div>
+            
+            <div class="status-readout">
+                <div class="status-item">
+                    <span>Status:</span>
+                    <span id="status-text" class="status-value">Monitoring...</span>
+                </div>
+                <div class="status-item">
+                    <span>Growth:</span>
+                    <span id="growth-text" class="status-value">0%</span>
+                </div>
+                <div class="status-item">
+                    <span>Ecosystem Sync:</span>
+                    <span class="status-value">Live <span class="sync-indicator"></span></span>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn" onclick="feedSnack()">
+                    <span class="emoji-icon">🍖</span> Feed Snack
+                </button>
+                <button class="btn btn-fetch" onclick="playFetch()">
+                    <span class="emoji-icon">🎾</span> Play Fetch
+                </button>
+                <button class="btn" id="sleep-btn" onclick="toggleSleep()">
+                    <span class="emoji-icon">🌙</span> Sleep / Rest
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Telegram WebApp
+        let tg = window.Telegram.WebApp;
+        tg.expand(); // Expand to full height
+
+        // Display user name if available
+        const userDisplay = document.getElementById('username-display');
+        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+            userDisplay.textContent = `Welcome, @${tg.initDataUnsafe.user.username || tg.initDataUnsafe.user.first_name}`;
+        } else {
+            userDisplay.textContent = `Welcome, @Guest`;
+        }
+
+        let isNightMode = false;
+        let growth = 0;
+
+        function updateStatus(message) {
+            document.getElementById('status-text').textContent = message;
+            // Provide haptic feedback if supported by Telegram client
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('light');
+            }
+        }
+
+        function increaseGrowth(amount) {
+            growth += amount;
+            if(growth > 100) growth = 100;
+            document.getElementById('growth-text').textContent = `${growth}%`;
+        }
+
+        function feedSnack() {
+            if (isNightMode) {
+                updateStatus("Shh... Puppy is sleeping");
+                return;
+            }
+            updateStatus("Feeding snack...");
+            increaseGrowth(5);
+            
+            setTimeout(() => {
+                if(!isNightMode) updateStatus("Happy & Fed!");
+            }, 2000);
+        }
+
+        function playFetch() {
+            if (isNightMode) {
+                updateStatus("Too sleepy to play...");
+                return;
+            }
+            updateStatus("Playing fetch! 🎾");
+            increaseGrowth(10);
+            
+            setTimeout(() => {
+                 if(!isNightMode) updateStatus("Ready for more!");
+            }, 2000);
+        }
+
+        function toggleSleep() {
+            isNightMode = !isNightMode;
+            
+            const body = document.body;
+            const puppyImg = document.getElementById('puppy-img');
+            const sleepBtn = document.getElementById('sleep-btn');
+            
+            if (isNightMode) {
+                body.classList.add('night-mode');
+                puppyImg.src = "images/hatchery/puppy_sleeping.jpg";
+                updateStatus("Resting and growing...");
+                sleepBtn.innerHTML = '<span class="emoji-icon">☀️</span> Wake Up';
+                increaseGrowth(2); // Passive growth from resting
+                
+                // Change Telegram header color if supported
+                tg.setHeaderColor('#050706'); 
+                tg.setBackgroundColor('#050706');
+            } else {
+                body.classList.remove('night-mode');
+                puppyImg.src = "images/hatchery/puppy_awake.jpg";
+                updateStatus("Wide awake!");
+                sleepBtn.innerHTML = '<span class="emoji-icon">🌙</span> Sleep / Rest';
+                
+                tg.setHeaderColor('#0b0f0e');
+                tg.setBackgroundColor('#0b0f0e');
+            }
+            
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('medium');
+            }
+        }
+    </script>
+</body>
+</html>
