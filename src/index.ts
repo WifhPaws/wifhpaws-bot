@@ -2525,6 +2525,8 @@ interface TriviaSession {
   guessedUsers: Set<number>;
   messageId?: number;
   timer?: NodeJS.Timeout;
+  acceptingAnswers?: boolean;
+  roundWinners?: Array<{ userId: number; name: string; wallet: string }>;
 }
 const activeTriviaGames = new Map<number, TriviaSession>();
 
@@ -2567,11 +2569,13 @@ bot.command('start_trivia', async (ctx) => {
       questions,
       currentIdx: 0,
       scores: {},
-      guessedUsers: new Set()
+      guessedUsers: new Set(),
+      acceptingAnswers: false,
+      roundWinners: []
     };
     activeTriviaGames.set(ctx.chat.id, session);
 
-    await ctx.reply(`🧠 *Trivia Game Started!* 🧠\n\nThere are ${questions.length} questions. Top players will earn trivia rewards!\n\nGet ready...`, { parse_mode: 'Markdown' });
+    await ctx.reply(`🧠 *Trivia Game Started!* 🧠\n\nThere are ${questions.length} questions. You have 60 seconds per question — everyone who answers correctly gets 1 point!\n\nGet ready...`, { parse_mode: 'Markdown' });
     
     setTimeout(() => sendNextTriviaQuestion(ctx), 3000);
   } catch (err: any) {
@@ -2590,12 +2594,14 @@ async function sendNextTriviaQuestion(ctx: any) {
 
   const q = session.questions[session.currentIdx];
   session.guessedUsers.clear();
+  session.roundWinners = [];
+  session.acceptingAnswers = true;
 
   const keyboard = q.options.map((opt: string, idx: number) => {
     return [{ text: opt, callback_data: `tq_${idx}` }];
   });
 
-  const msg = await ctx.reply(`📝 *Question ${session.currentIdx + 1} of ${session.questions.length}:*\n\n${q.question}`, {
+  const msg = await ctx.reply(`📝 *Question ${session.currentIdx + 1} of ${session.questions.length}:* (⏳ 60s)\n\n${q.question}`, {
     parse_mode: 'Markdown',
     reply_markup: { inline_keyboard: keyboard }
   });
@@ -2603,10 +2609,39 @@ async function sendNextTriviaQuestion(ctx: any) {
   session.messageId = msg.message_id;
 
   session.timer = setTimeout(async () => {
-    await ctx.telegram.editMessageText(ctx.chat.id, session.messageId, undefined, `⏰ *Time's up!* Nobody got it.\n\nThe correct answer was: *${q.options[q.correctOptionId]}*`, { parse_mode: 'Markdown' });
+    session.acceptingAnswers = false;
+
+    // Credit points to all players who answered correctly during this round
+    const winners = session.roundWinners || [];
+    for (const w of winners) {
+      if (!session.scores[w.userId]) {
+        session.scores[w.userId] = {
+          name: w.name,
+          score: 0,
+          wallet: w.wallet,
+          userId: w.userId
+        };
+      }
+      session.scores[w.userId].score += 1;
+    }
+
+    let recapText = `⏰ *Time's up!*\n\nThe correct answer was: *${q.options[q.correctOptionId]}*\n\n`;
+    if (winners.length > 0) {
+      const winnerList = winners.map(w => `• ${w.name}`).join('\n');
+      recapText += `🎯 *Correct answers (${winners.length}):*\n${winnerList}\n\n_+1 point awarded to each!_`;
+    } else {
+      recapText += `😢 *Nobody answered correctly!*`;
+    }
+
+    try {
+      await ctx.telegram.editMessageText(ctx.chat.id, session.messageId, undefined, recapText, { parse_mode: 'Markdown' });
+    } catch (editErr: any) {
+      console.warn('[trivia] Failed to edit question message on timeout:', editErr?.message || editErr);
+    }
+
     session.currentIdx++;
     setTimeout(() => sendNextTriviaQuestion(ctx), 4000);
-  }, 20000);
+  }, 60000);
 }
 
 bot.action(/tq_(\d+)/, async (ctx) => {
@@ -2615,12 +2650,16 @@ bot.action(/tq_(\d+)/, async (ctx) => {
 
   const session = activeTriviaGames.get(chatId);
   if (!session) {
-    return ctx.answerCbQuery('No active trivia game!', { show_alert: true });
+    return ctx.answerCbQuery('No active trivia game!');
+  }
+
+  if (!session.acceptingAnswers) {
+    return ctx.answerCbQuery('⏰ Time is up for this question!');
   }
 
   const userId = ctx.from!.id;
   if (session.guessedUsers.has(userId)) {
-    return ctx.answerCbQuery('You already guessed this question!', { show_alert: true });
+    return ctx.answerCbQuery('You already submitted an answer for this question!');
   }
 
   const chosenIdx = parseInt(ctx.match[1]);
@@ -2629,27 +2668,25 @@ bot.action(/tq_(\d+)/, async (ctx) => {
   session.guessedUsers.add(userId);
 
   if (chosenIdx === q.correctOptionId) {
-    clearTimeout(session.timer);
-    
-    if (!session.scores[userId]) {
+    const playerName = ctx.from!.username ? `@${ctx.from!.username}` : (ctx.from!.first_name || 'Player');
+    let wallet = '';
+    try {
       const dbUser = await getOrCreateUser(userId, ctx.from!.username || ctx.from!.first_name || 'Player');
-      session.scores[userId] = {
-        name: ctx.from!.username ? `@${ctx.from!.username}` : (ctx.from!.first_name || 'Player'),
-        score: 0,
-        wallet: dbUser?.wallet_address || '',
-        userId: userId
-      };
+      wallet = dbUser?.wallet_address || '';
+    } catch (dbErr) {
+      console.warn('[trivia] Error fetching user wallet:', dbErr);
     }
-    session.scores[userId].score += 1;
 
-    await ctx.answerCbQuery('Correct! 🎉');
-    
-    await ctx.telegram.editMessageText(chatId, session.messageId, undefined, `✅ *Correct!* ${session.scores[userId].name} got it first!\n\nQuestion: ${q.question}\nAnswer: *${q.options[q.correctOptionId]}*`, { parse_mode: 'Markdown' });
-    
-    session.currentIdx++;
-    setTimeout(() => sendNextTriviaQuestion(ctx), 4000);
+    if (!session.roundWinners) session.roundWinners = [];
+    session.roundWinners.push({
+      userId,
+      name: playerName,
+      wallet
+    });
+
+    await ctx.answerCbQuery('🎉 Correct! Point recorded.');
   } else {
-    await ctx.answerCbQuery('Wrong answer! ❌');
+    await ctx.answerCbQuery('❌ Wrong answer!');
   }
 });
 
