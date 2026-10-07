@@ -2,10 +2,11 @@ import fs from 'fs';
 import path from 'path';
 
 export interface CuratedTriviaQuestion {
-  id: string;
+  id?: string;
   question: string;
-  options: string[];
-  correct: number;
+  answer?: string;
+  options?: string[];
+  correct?: number;
 }
 
 export interface TriviaBank {
@@ -49,10 +50,46 @@ export function reloadTriviaBank(): void {
 }
 
 /**
+ * Helper to ensure a question has 4 randomized multiple-choice options.
+ * If options/correct already exist, they are preserved.
+ * If only question and answer exist, 3 distinct distractors from the category answer pool are selected.
+ */
+function resolveQuestionOptions(
+  q: CuratedTriviaQuestion,
+  allAnswers: string[]
+): { question: string; options: string[]; correctOptionId: number } {
+  if (q.options && q.options.length >= 2 && typeof q.correct === 'number') {
+    return {
+      question: q.question,
+      options: q.options,
+      correctOptionId: q.correct,
+    };
+  }
+
+  const correctAnswer = q.answer || (q.options ? q.options[0] : 'Correct');
+  const otherAnswers = allAnswers.filter(a => a.toLowerCase() !== correctAnswer.toLowerCase());
+  const shuffledOthers = [...otherAnswers].sort(() => 0.5 - Math.random());
+  const distractors = shuffledOthers.slice(0, 3);
+
+  while (distractors.length < 3) {
+    distractors.push(`Alternative ${distractors.length + 1}`);
+  }
+
+  const options = [...distractors, correctAnswer].sort(() => 0.5 - Math.random());
+  const correctOptionId = options.indexOf(correctAnswer);
+
+  return {
+    question: q.question,
+    options,
+    correctOptionId: Math.max(0, correctOptionId),
+  };
+}
+
+/**
  * Fetch a random question from the loaded trivia bank given a specific category.
  * Returns null if the category does not exist or has no questions.
  */
-export function getRandomQuestionByCategory(category: keyof TriviaBank): CuratedTriviaQuestion | null {
+export function getRandomQuestionByCategory(category: keyof TriviaBank): { id: string; question: string; options: string[]; correct: number } | null {
   const bank = getTriviaBank();
   const questions = bank[category];
 
@@ -60,8 +97,24 @@ export function getRandomQuestionByCategory(category: keyof TriviaBank): Curated
     return null;
   }
 
+  const allAnswers = Array.from(
+    new Set(
+      questions
+        .map(q => q.answer || (q.options && typeof q.correct === 'number' ? q.options[q.correct] : null))
+        .filter((a): a is string => Boolean(a && a.trim()))
+    )
+  );
+
   const randomIndex = Math.floor(Math.random() * questions.length);
-  return questions[randomIndex];
+  const rawQ = questions[randomIndex];
+  const resolved = resolveQuestionOptions(rawQ, allAnswers);
+
+  return {
+    id: rawQ.id || `q_${randomIndex + 1}`,
+    question: resolved.question,
+    options: resolved.options,
+    correct: resolved.correctOptionId,
+  };
 }
 
 /**
@@ -79,12 +132,16 @@ export function getTriviaQuestionsByCategory(
     return [];
   }
 
+  const allAnswers = Array.from(
+    new Set(
+      questions
+        .map(q => q.answer || (q.options && typeof q.correct === 'number' ? q.options[q.correct] : null))
+        .filter((a): a is string => Boolean(a && a.trim()))
+    )
+  );
+
   const shuffled = [...questions].sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, count).map(q => ({
-    question: q.question,
-    options: q.options,
-    correctOptionId: q.correct
-  }));
+  return shuffled.slice(0, count).map(q => resolveQuestionOptions(q, allAnswers));
 }
 
 export type TriviaCategory = keyof TriviaBank;

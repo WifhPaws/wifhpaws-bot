@@ -1,666 +1,207 @@
 {
   "crypto_wifh": [
-    {
-      "id": "wifh_lore_01",
-      "question": "What blockchain network is DOGWIFH00D ($WIFH) deployed on?",
-      "options": [
-        "Solana",
-        "Robinhood Chain",
-        "Base",
-        "Arbitrum"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_02",
-      "question": "What is the signature outfit worn by the WIFH Shiba Inu mascot?",
-      "options": [
-        "A tuxedo and top hat",
-        "A spacesuit and helmet",
-        "A dark forest green hoodie and dusty mauve beanie",
-        "A red leather jacket and sunglasses"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "wifh_lore_03",
-      "question": "What is the official Chain ID for the Robinhood Chain mainnet?",
-      "options": [
-        "1",
-        "42161",
-        "4663",
-        "8453"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "wifh_lore_04",
-      "question": "What is the name of the public contract scanning and analysis tool built for the ecosystem?",
-      "options": [
-        "Robinscan",
-        "WIFH Inspector",
-        "PawsScanner",
-        "HoodieTrace"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_05",
-      "question": "On which decentralized exchange protocol do $WIFH trades primarily route via WETH liquidity pools?",
-      "options": [
-        "Uniswap V3",
-        "Sushiswap",
-        "Curve",
-        "PancakeSwap"
-      ],
-      "correct": 0
-    },
-    {
-      "id": "wifh_lore_06",
-      "question": "What native token is used to pay for gas fees on Robinhood Chain?",
-      "options": [
-        "USDC",
-        "WIFH",
-        "ETH",
-        "HOOD"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "wifh_lore_07",
-      "question": "What interactive feature is found inside the WifhPaws Hatchery interface?",
-      "options": [
-        "A staking vault",
-        "An incubator pod",
-        "A digital trading card press",
-        "A token faucet"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_08",
-      "question": "Which technology framework is utilized under the hood by Robinhood Chain as an L2 rollup?",
-      "options": [
-        "Optimism Bedrock",
-        "Arbitrum Orbit",
-        "Polygon CDK",
-        "zkSync Era"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_09",
-      "question": "What type of cryptocurrency asset class is a core focus of the Robinhood Chain ecosystem infrastructure?",
-      "options": [
-        "Meme coins only",
-        "Tokenized real-world assets (RWAs) and stocks",
-        "Government CBDCs",
-        "Algorithmic stablecoins"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_10",
-      "question": "What color is the knitted beanie worn by the WIFH Shiba Inu mascot?",
-      "options": [
-        "Dark forest green",
-        "Dusty mauve",
-        "Neon yellow",
-        "Crimson red"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_11",
-      "question": "Which block explorer natively serves transactions on Robinhood Chain?",
-      "options": [
-        "Etherscan",
-        "Solscan",
-        "Blockscout",
-        "Polygonscan"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "wifh_lore_12",
-      "question": "How are transaction fees handled on Robinhood Chain regarding priority queue tipping?",
-      "options": [
-        "Higher tips speed up confirmation",
-        "Transactions process strictly in order of arrival",
-        "Tips go directly to validators as bribes",
-        "Gas is completely free for all users"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_13",
-      "question": "What asset format does Robinhood Chain use for its wallet address architecture?",
-      "options": [
-        "Solana base58 format",
-        "Bitcoin bech32 format",
-        "EVM-compatible hexadecimal format",
-        "Cosmos SDK format"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "wifh_lore_14",
-      "question": "What is the primary aesthetic theme associated with the WifhPaws mascot artwork?",
-      "options": [
-        "Cyberpunk neon cyborgs",
-        "Cozy streetwear Shiba Inu",
-        "Medieval fantasy knights",
-        "Pixel art space pirates"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_15",
-      "question": "Which backend database system pairs with the WifhPaws Telegram bot infrastructure?",
-      "options": [
-        "MongoDB",
-        "Supabase",
-        "Firebase Realtime",
-        "MySQL"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_16",
-      "question": "What encryption standard is utilized for securing sensitive wallet keys in the bot backend?",
-      "options": [
-        "MD5 Hash",
-        "AES-256-GCM",
-        "RSA-512",
-        "Base64 Encoding"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_17",
-      "question": "Where is the Telegram bot backend infrastructure typically hosted for continuous uptime?",
-      "options": [
-        "Render",
-        "AWS S3 Bucket",
-        "Local Raspberry Pi",
-        "Cloudflare Pages"
-      ],
-      "correct": 0
-    },
-    {
-      "id": "wifh_lore_18",
-      "question": "What is the primary utility of running a 'WIFH Inspector' community campaign?",
-      "options": [
-        "Farming free testnet tokens",
-        "Encouraging community research into liquidity, holder distribution, and metrics",
-        "Spamming competing Telegram chats",
-        "Mining proof-of-work blocks manually"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_19",
-      "question": "What framework powers the mini-app interactive components like the Hatchery pod?",
-      "options": [
-        "React / Node.js web tech",
-        "Unreal Engine 5",
-        "Unity C# desktop build",
-        "Flash Player plugin"
-      ],
-      "correct": 0
-    },
-    {
-      "id": "wifh_lore_20",
-      "question": "In the context of the project's visual storytelling, what animal is the main mascot?",
-      "options": [
-        "A Golden Retriever",
-        "A Shiba Inu",
-        "A Husky",
-        "A Corgi"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_21",
-      "question": "Which protocol class handles cross-chain bridging routes into Robinhood Chain?",
-      "options": [
-        "Arbitrum canonical bridge and partner routes",
-        "Lightning Network channels",
-        "Inter-Blockchain Communication (IBC)",
-        "XRP Ledger Gateways"
-      ],
-      "correct": 0
-    },
-    {
-      "id": "wifh_lore_22",
-      "question": "What developer language is predominantly used for building the bot services and API endpoints?",
-      "options": [
-        "Python",
-        "TypeScript / JavaScript",
-        "C++",
-        "Rust"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_23",
-      "question": "What mechanism ensures liquidity security for the token ecosystem?",
-      "options": [
-        "Permanently locked liquidity",
-        "Founder-withdrawable pools",
-        "Daily liquidity shifting",
-        "Manual pool pausing"
-      ],
-      "correct": 0
-    },
-    {
-      "id": "wifh_lore_24",
-      "question": "How do admins interact with the trivia system during a live community event?",
-      "options": [
-        "Through an exclusive admin-only Telegram panel",
-        "By modifying database lines live via phone call",
-        "By editing smart contract bytecode",
-        "By mailing support tickets"
-      ],
-      "correct": 0
-    },
-    {
-      "id": "wifh_lore_25",
-      "question": "What is the primary role of the WifhPaws Bot in the community channel?",
-      "options": [
-        "Executing flash loans for members",
-        "Onboarding, mini-games, trivia moderation, and web3 functions",
-        "Automated crypto trading for profit guarantees",
-        "Mining Bitcoin inside chat"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_26",
-      "question": "What specific tone does the project aim for in its community interactions?",
-      "options": [
-        "Stuffy corporate finance memo style",
-        "Fun, cozy, community-driven Web3 culture",
-        "Strict academic computer science lectures",
-        "Aggressive trading signal alerts"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_27",
-      "question": "What tool verifies transaction hashes and block states on the network?",
-      "options": [
-        "Robinscan explorer",
-        "GitHub commit viewer",
-        "Telegram pinned message log",
-        "Discord audit bot"
-      ],
-      "correct": 0
-    },
-    {
-      "id": "wifh_lore_28",
-      "question": "What deployment pipeline triggers automatic updates when code is pushed to GitHub?",
-      "options": [
-        "Render continuous deployment",
-        "Manual FTP file upload",
-        "Bluetooth local transfer",
-        "CD-ROM burning"
-      ],
-      "correct": 0
-    },
-    {
-      "id": "wifh_lore_29",
-      "question": "What makes the token supply structure distinct?",
-      "options": [
-        "Infinite inflationary printing",
-        "A fixed total supply cap",
-        "Daily token rebase adjustments",
-        "Random supply burning by AI"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "wifh_lore_30",
-      "question": "What kind of environment is represented by the incubator pod in the WifhPaws mini-app?",
-      "options": [
-        "A virtual digital organism hatchery habitat",
-        "A crypto mining rig cooling tank",
-        "A stock market trading floor simulator",
-        "An automated liquidity vault"
-      ],
-      "correct": 0
-    }
+    { "question": "What blockchain network is the DOGWIFH00D ($WIFH) ecosystem built on?", "answer": "Robinhood Chain" },
+    { "question": "What is the signature attire worn by the Shiba Inu mascot in the DOGWIFH00D branding?", "answer": "Oversized dark forest green hoodie and a dusty mauve knitted beanie" },
+    { "question": "Which block explorer tool is used within the ecosystem for tracking transactions and network data?", "answer": "Robinscan" },
+    { "question": "What primary utility integration allows users to exchange assets across different chains within the WIFH ecosystem?", "answer": "Cross-chain swap integration" },
+    { "question": "What specialized tool assists community members with auditing holder distribution, locked liquidity, and market data?", "answer": "WIFH Inspector" },
+    { "question": "What mechanism ensures that the $WIFH token supply cannot be arbitrarily inflated over time?", "answer": "Fixed supply" },
+    { "question": "What security feature gives investors confidence that initial pool funds cannot be pulled maliciously?", "answer": "Locked liquidity" },
+    { "question": "What color is the knitted beanie worn by the Shiba Inu mascot?", "answer": "Dusty mauve" },
+    { "question": "What is the primary color of the oversized hoodie worn by the WIFH mascot?", "answer": "Dark forest green" },
+    { "question": "Which social media platform hosts community educational campaigns like the WIFH Inspector challenge?", "answer": "X" },
+    { "question": "What technology powers the underlying architecture of Robinhood Chain as an Ethereum Layer 2?", "answer": "Arbitrum technology" },
+    { "question": "What token serves as the native gas asset on Robinhood Chain?", "answer": "ETH" },
+    { "question": "What type of financial products are a major focus for tokenized finance integration on Robinhood Chain?", "answer": "Real-world assets and tokenized stocks" },
+    { "question": "What core principle of Web3 emphasizes user control over their own private keys and funds?", "answer": "Self-custody" },
+    { "question": "What is the primary purpose of a blockchain token approval?", "answer": "To give a smart contract permission to spend tokens on your behalf" },
+    { "question": "What common decentralized finance tool allows users to check and revoke active smart contract permissions?", "answer": "Token approval checker" },
+    { "question": "What type of network allows applications to interact with a blockchain without downloading the entire history locally?", "answer": "RPC node" },
+    { "question": "What risk is mitigated by locking liquidity pool tokens upon token launch?", "answer": "Rug pulls" },
+    { "question": "What metric describes how evenly or unevenly tokens are spread across different wallet holders?", "answer": "Holder distribution" },
+    { "question": "What digital canine breed serves as the viral inspiration behind major memecoins like $WIFH?", "answer": "Shiba Inu" },
+    { "question": "What term refers to a decentralized marketplace that allows digital asset trading without an intermediary?", "answer": "Decentralized Exchange" },
+    { "question": "What automated mechanism replaces traditional order books in many decentralized exchanges?", "answer": "Automated Market Maker" },
+    { "question": "What term describes a permanent record of blocks containing cryptocurrency transaction history?", "answer": "Blockchain ledger" },
+    { "question": "What cryptographic concept secures blockchain accounts using a public and private key pair?", "answer": "Public-key cryptography" },
+    { "question": "What term describes the digital signature confirmation required to execute a blockchain transaction?", "answer": "Transaction signature" },
+    { "question": "What is the main advantage of an Ethereum Layer 2 network compared to the Layer 1 mainnet?", "answer": "Faster speeds and lower transaction fees" },
+    { "question": "What mechanism do rollups use to post transaction data back to the main Ethereum chain?", "answer": "Data availability blobs" },
+    { "question": "What decentralized finance pool provides the necessary capital for trading pairs on an AMM?", "answer": "Liquidity pool" },
+    { "question": "What term refers to the unexpected loss that liquidity providers can experience compared to simply holding tokens?", "answer": "Impermanent loss" },
+    { "question": "What does EVM stand for in the context of blockchain compatibility?", "answer": "Ethereum Virtual Machine" },
+    { "question": "Why is EVM-compatibility advantageous for developers moving tools from Ethereum to a new chain?", "answer": "They can use the exact same smart contract tools and code libraries" },
+    { "question": "What is a cryptocurrency faucet used for on a testnet network?", "answer": "Distributing free test tokens for experimentation" },
+    { "question": "What critical security rule applies to handling seed phrases when interacting with crypto faucets or bridges?", "answer": "Never share or type your seed phrase anywhere" },
+    { "question": "What term describes a simulated blockchain network used strictly for development and testing?", "answer": "Testnet" },
+    { "question": "What network environment involves real financial risk and actual market assets?", "answer": "Mainnet" },
+    { "question": "What tool allows a user to swap tokens directly across different blockchain networks?", "answer": "Cross-chain bridge" },
+    { "question": "What term describes a collection of digital art or assets managed by smart contracts?", "answer": "NFT collection" },
+    { "question": "What type of cryptocurrency gains viral popularity primarily driven by internet culture and community memes?", "answer": "Memecoin" },
+    { "question": "What term refers to individuals who hold onto their cryptocurrency investments through market volatility instead of selling?", "answer": "Diamond hands" },
+    { "question": "What analytical data does a block explorer provide to network participants?", "answer": "Transaction histories, block heights, and wallet balances" },
+    { "question": "What cryptographic function transforms input data into a fixed-size string of characters for verification?", "answer": "Hash function" },
+    { "question": "What consensus mechanism relies on validators staking native tokens to secure the network?", "answer": "Proof-of-Stake" },
+    { "question": "What consensus mechanism relies on computational power and mining hardware to secure the network?", "answer": "Proof-of-Work" },
+    { "question": "What term describes the fee paid to network validators to process transactions on a blockchain?", "answer": "Gas fee" },
+    { "question": "What type of wallet requires the user to maintain complete independent control over their private keys?", "answer": "Non-custodial wallet" },
+    { "question": "What hardware device provides offline cold storage protection for cryptocurrency private keys?", "answer": "Hardware wallet" },
+    { "question": "What term refers to a decentralized autonomous organization governed by token holder voting?", "answer": "DAO" },
+    { "question": "What type of smart contract attack involves draining liquidity by manipulating asset prices within a single transaction block?", "answer": "Flash loan attack" },
+    { "question": "What term describes the total value of all digital assets locked within a decentralized finance protocol?", "answer": "Total Value Locked" },
+    { "question": "What metric defines the total number of tokens that will ever exist for a fixed-supply cryptocurrency?", "answer": "Maximum supply" },
+    { "question": "What metric defines tokens currently circulating and available in the open market?", "answer": "Circulating supply" },
+    { "question": "What term describes the total financial value of a cryptocurrency calculated by multiplying price by circulating supply?", "answer": "Market capitalization" },
+    { "question": "What phenomenon occurs when a trader accidentally interacts with a malicious token contract?", "answer": "Wallet drain" },
+    { "question": "What feature do advanced Web3 security browser extensions provide before a user signs a transaction?", "answer": "Transaction simulation" },
+    { "question": "What term describes a digital community dedicated to promoting and growing a specific cryptocurrency project?", "answer": "Crypto community" },
+    { "question": "What communication platform is most widely used by Web3 project communities for daily engagement and announcements?", "answer": "Telegram" },
+    { "question": "What microblogging platform serves as the primary hub for crypto project updates, alpha sharing, and community campaigns?", "answer": "X" },
+    { "question": "What term describes early-stage contributors or believers who support a token project from inception?", "answer": "Early adopters" },
+    { "question": "What type of marketing campaign incentivizes community members to research token metrics and security data?", "answer": "Educational audit campaign" },
+    { "question": "What term refers to verified proof that a smart contract's code has been inspected for security vulnerabilities?", "answer": "Smart contract audit" },
+    { "question": "What protocol upgrade or change requires all network nodes to update their software to remain compatible?", "answer": "Hard fork" },
+    { "question": "What term describes an artificial price increase coordinated by bad actors before selling off assets at retail expense?", "answer": "Pump and dump" },
+    { "question": "What type of trading order executes automatically when an asset reaches a specified price target?", "answer": "Limit order" },
+    { "question": "What term refers to liquidity pools where users can pool two different assets to facilitate decentralized trading?", "answer": "Dual-token liquidity pool" },
+    { "question": "What cryptographic protocol ensures secure communication and data privacy over computer networks?", "answer": "TLS encryption" },
+    { "question": "What database role management practice ensures that backend services only access authorized tables?", "answer": "Role-based access control" },
+    { "question": "What standard encoding format is widely used for transmitting data objects consisting of attribute-value pairs?", "answer": "JSON" },
+    { "question": "What runtime environment allows developers to execute JavaScript code outside of a web browser?", "answer": "Node.js" },
+    { "question": "What web framework for Node.js simplifies building robust backend APIs and routing?", "answer": "Express" },
+    { "question": "What cloud-based relational database service provides scalable backend storage for modern applications?", "answer": "Supabase" },
+    { "question": "What symmetric encryption algorithm uses a 256-bit key in Galois/Counter Mode to secure sensitive data?", "answer": "AES-256-GCM" },
+    { "question": "What platform provides cloud hosting services for deploying containerized web apps and bots?", "answer": "Render" },
+    { "question": "What version control system tracks code changes and facilitates team collaboration on software projects?", "answer": "Git" },
+    { "question": "What code hosting platform provides remote repository storage, issue tracking, and CI/CD workflows?", "answer": "GitHub" },
+    { "question": "What automated continuous integration process builds and tests code changes upon pushing to a repository?", "answer": "CI/CD pipeline" },
+    { "question": "What software architecture separates an application into independent components handling data, logic, and user interfaces?", "answer": "Model-View-Controller architecture" },
+    { "question": "What programming language adds static typing features to JavaScript for enhanced developer safety?", "answer": "TypeScript" },
+    { "question": "What asynchronous programming pattern in JavaScript uses promises and clean syntax for handling operations?", "answer": "Async/Await" },
+    { "question": "What term describes a software routine that listens for incoming webhook events from messaging platforms?", "answer": "Bot event handler" },
+    { "question": "What interface element in Telegram messaging allows users to interact via clickable buttons attached to messages?", "answer": "Inline keyboard markup" },
+    { "question": "What security check verifies whether a user executing an administrative command holds proper authorization roles?", "answer": "Role-based authorization check" },
+    { "question": "What command-line action uploads local repository commits to a remote server origin?", "answer": "Git push" },
+    { "question": "What command stages modified files in a Git repository for the next commit?", "answer": "Git add" },
+    { "question": "What command records staged repository changes with an explanatory message?", "answer": "Git commit" },
+    { "question": "What file format configuration is commonly used for storing application environment variables and secrets?", "answer": "Dotenv file" },
+    { "question": "What term describes the process of finding and fixing software bugs or parser errors in code?", "answer": "Debugging" },
+    { "question": "What parsing error occurs when text formatting characters conflict with markdown interpreter syntax?", "answer": "Markdown entity parse error" },
+    { "question": "What HTTP status code indicates a bad request due to malformed syntax or invalid parameters?", "answer": "400 Bad Request" },
+    { "question": "What software testing method ensures individual modules perform correctly before system integration?", "answer": "Unit testing" },
+    { "question": "What term describes a pre-configured template or starter kit used to bootstrap new software projects?", "answer": "Boilerplate" },
+    { "question": "What web technology allows developers to build interactive user interfaces using reusable components?", "answer": "Frontend framework" },
+    { "question": "What term describes the visual layout and design elements presented to a user within an application interface?", "answer": "User interface" },
+    { "question": "What navigation mechanism allows users to switch smoothly between different menus in a bot application?", "answer": "Submenu navigation flow" },
+    { "question": "What configuration state allows an administrator to toggle specific system features on or off dynamically?", "answer": "Toggle configuration state" },
+    { "question": "What server-side storage file saves persistent preference states and feature toggles for an application?", "answer": "Configuration JSON file" },
+    { "question": "What term describes restricting specific administrative commands so they cannot be executed inside public group chats?", "answer": "Private DM restriction enforcement" },
+    { "question": "What validation check ensures that automated game sessions only launch within authorized community group chats?", "answer": "Chat type context validation" },
+    { "question": "What fallback mechanism ensures an application recovers gracefully when an exception occurs during runtime?", "answer": "Try/catch error fallback" },
+    { "question": "What build tool compiles TypeScript source files down into production-ready JavaScript output?", "answer": "TypeScript compiler" },
+    { "question": "What term describes updating a running server instance without experiencing downtime or manual intervention?", "answer": "Hot-reload" },
+    { "question": "What metric tracks the total number of curated questions available within an educational trivia bank?", "answer": "Question bank curation count" }
   ],
   "general_knowledge": [
-    {
-      "id": "gen_know_01",
-      "question": "What is the capital of Japan?",
-      "options": [
-        "Seoul",
-        "Beijing",
-        "Tokyo",
-        "Bangkok"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_02",
-      "question": "Which planet is known as the Red Planet?",
-      "options": [
-        "Venus",
-        "Mars",
-        "Jupiter",
-        "Saturn"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_03",
-      "question": "Which is the largest ocean on Earth?",
-      "options": [
-        "Atlantic Ocean",
-        "Indian Ocean",
-        "Pacific Ocean",
-        "Arctic Ocean"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_04",
-      "question": "Who painted the Mona Lisa?",
-      "options": [
-        "Vincent van Gogh",
-        "Leonardo da Vinci",
-        "Pablo Picasso",
-        "Claude Monet"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_05",
-      "question": "What is the chemical symbol for Gold?",
-      "options": [
-        "Ag",
-        "Au",
-        "Fe",
-        "Pb"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_06",
-      "question": "How many continents are there on Earth?",
-      "options": [
-        "5",
-        "6",
-        "7",
-        "8"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_07",
-      "question": "What is the fastest land animal in the world?",
-      "options": [
-        "Lion",
-        "Cheetah",
-        "Pronghorn",
-        "Gazelle"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_08",
-      "question": "In which country would you find the Great Pyramids of Giza?",
-      "options": [
-        "Mexico",
-        "Egypt",
-        "Greece",
-        "Peru"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_09",
-      "question": "What is the hardest natural substance on Earth?",
-      "options": [
-        "Titanium",
-        "Quartz",
-        "Diamond",
-        "Topaz"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_10",
-      "question": "Who wrote the play Romeo and Juliet?",
-      "options": [
-        "Charles Dickens",
-        "William Shakespeare",
-        "Mark Twain",
-        "Jane Austen"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_11",
-      "question": "What is the boiling point of water at standard sea level atmospheric pressure?",
-      "options": [
-        "90°C",
-        "100°C",
-        "120°C",
-        "212°C"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_12",
-      "question": "Which gas makes up the majority of the air in Earth atmosphere?",
-      "options": [
-        "Oxygen",
-        "Carbon Dioxide",
-        "Nitrogen",
-        "Hydrogen"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_13",
-      "question": "What is the official currency of the United Kingdom?",
-      "options": [
-        "Euro",
-        "US Dollar",
-        "Pound Sterling",
-        "Swiss Franc"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_14",
-      "question": "Which is the largest living mammal on Earth?",
-      "options": [
-        "African Elephant",
-        "Blue Whale",
-        "Giraffe",
-        "Colossal Squid"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_15",
-      "question": "How many sides does a regular hexagon have?",
-      "options": [
-        "5",
-        "6",
-        "7",
-        "8"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_16",
-      "question": "Which language has the highest number of native speakers worldwide?",
-      "options": [
-        "English",
-        "Spanish",
-        "Mandarin Chinese",
-        "Hindi"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_17",
-      "question": "What is the primary organ responsible for pumping blood throughout the human body?",
-      "options": [
-        "Brain",
-        "Liver",
-        "Heart",
-        "Lungs"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_18",
-      "question": "In what year did the Apollo 11 mission first land humans on the Moon?",
-      "options": [
-        "1965",
-        "1969",
-        "1971",
-        "1975"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_19",
-      "question": "Which country is the native habitat of both the Kangaroo and the Koala?",
-      "options": [
-        "New Zealand",
-        "South Africa",
-        "Australia",
-        "Brazil"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_20",
-      "question": "What gas do plants primarily absorb from the air during photosynthesis?",
-      "options": [
-        "Oxygen",
-        "Nitrogen",
-        "Carbon Dioxide",
-        "Methane"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_21",
-      "question": "What is traditionally considered the longest river in the world?",
-      "options": [
-        "Amazon River",
-        "Nile River",
-        "Yangtze River",
-        "Mississippi River"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_22",
-      "question": "What does www stand for in a website address?",
-      "options": [
-        "World Wide Web",
-        "Wide World Web",
-        "Web World Wide",
-        "Western Wireless Web"
-      ],
-      "correct": 0
-    },
-    {
-      "id": "gen_know_23",
-      "question": "Who developed the theory of general relativity?",
-      "options": [
-        "Isaac Newton",
-        "Albert Einstein",
-        "Nikola Tesla",
-        "Niels Bohr"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_24",
-      "question": "How many keys are on a standard acoustic piano?",
-      "options": [
-        "76",
-        "88",
-        "92",
-        "100"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_25",
-      "question": "What is the smallest prime number?",
-      "options": [
-        "0",
-        "1",
-        "2",
-        "3"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_26",
-      "question": "On which continent is the Sahara Desert located?",
-      "options": [
-        "Asia",
-        "Africa",
-        "South America",
-        "Australia"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_27",
-      "question": "What is the primary main ingredient in guacamole?",
-      "options": [
-        "Tomato",
-        "Avocado",
-        "Lime",
-        "Cucumber"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_28",
-      "question": "Which planet is closest to the Sun?",
-      "options": [
-        "Venus",
-        "Mercury",
-        "Mars",
-        "Earth"
-      ],
-      "correct": 1
-    },
-    {
-      "id": "gen_know_29",
-      "question": "What is the official national animal of Scotland?",
-      "options": [
-        "Lion",
-        "Dragon",
-        "Unicorn",
-        "Golden Eagle"
-      ],
-      "correct": 2
-    },
-    {
-      "id": "gen_know_30",
-      "question": "How many degrees are there in a full circle?",
-      "options": [
-        "180",
-        "270",
-        "360",
-        "400"
-      ],
-      "correct": 2
-    }
+    { "question": "Which planet in our solar system is known as the Red Planet?", "answer": "Mars" },
+    { "question": "What is the chemical symbol for gold on the periodic table?", "answer": "Au" },
+    { "question": "Who painted the Mona Lisa?", "answer": "Leonardo da Vinci" },
+    { "question": "What is the capital city of Australia?", "answer": "Canberra" },
+    { "question": "Which gas makes up the majority of Earth's atmosphere?", "answer": "Nitrogen" },
+    { "question": "What is the hardest natural substance on Earth?", "answer": "Diamond" },
+    { "question": "Which ocean is the largest by surface area?", "answer": "Pacific Ocean" },
+    { "question": "What is the main ingredient in traditional Japanese miso soup?", "answer": "Fermented soybean paste" },
+    { "question": "In what year did the Titanic sink on its maiden voyage?", "answer": "1912" },
+    { "question": "What is the tallest mountain in the world above sea level?", "answer": "Mount Everest" },
+    { "question": "Which artist cut off a portion of his own ear in 1888?", "answer": "Vincent van Gogh" },
+    { "question": "What is the speed of light in a vacuum approximately?", "answer": "300,000 kilometers per second" },
+    { "question": "Which chemical element has the highest melting point?", "answer": "Tungsten" },
+    { "question": "What currency is used in Japan?", "answer": "Japanese Yen" },
+    { "question": "How many bones are in an adult human body?", "answer": "206" },
+    { "question": "What is the chemical symbol for water?", "answer": "H2O" },
+    { "question": "Who wrote the famous play Romeo and Juliet?", "answer": "William Shakespeare" },
+    { "question": "What is the largest mammal on Earth?", "answer": "Blue whale" },
+    { "question": "Which country is home to the ancient ruins of Machu Picchu?", "answer": "Peru" },
+    { "question": "What is the powerhouse of the cell?", "answer": "Mitochondria" },
+    { "question": "In what year did World War II end?", "answer": "1945" },
+    { "question": "What is the capital city of Canada?", "answer": "Ottawa" },
+    { "question": "Which element is represented by the chemical symbol 'Fe'?", "answer": "Iron" },
+    { "question": "Who was the first person to walk on the Moon?", "answer": "Neil Armstrong" },
+    { "question": "What is the smallest prime number?", "answer": "2" },
+    { "question": "Which desert is the largest hot desert in the world?", "answer": "Sahara Desert" },
+    { "question": "What language has the most native speakers worldwide?", "answer": "Mandarin Chinese" },
+    { "question": "What is the capital city of France?", "answer": "Paris" },
+    { "question": "Which instrument has 88 keys?", "answer": "Piano" },
+    { "question": "What is the freezing point of water in Celsius?", "answer": "0 degrees" },
+    { "question": "Who discovered penicillin in 1928?", "answer": "Alexander Fleming" },
+    { "question": "What is the longest river in the world?", "answer": "Nile River" },
+    { "question": "Which continent is the least populated?", "answer": "Antarctica" },
+    { "question": "What gas do plants absorb from the atmosphere for photosynthesis?", "answer": "Carbon dioxide" },
+    { "question": "What is the currency of the United Kingdom?", "answer": "British Pound" },
+    { "question": "Who painted Starry Night?", "answer": "Vincent van Gogh" },
+    { "question": "What is the main gas found in the sun?", "answer": "Hydrogen" },
+    { "question": "How many players are on a standard soccer team on the field?", "answer": "11" },
+    { "question": "What is the capital of Japan?", "answer": "Tokyo" },
+    { "question": "Which blood type is known as the universal donor?", "answer": "O negative" },
+    { "question": "What is the study of weather called?", "answer": "Meteorology" },
+    { "question": "Who wrote the novel 1984?", "answer": "George Orwell" },
+    { "question": "What is the national flower of Japan?", "answer": "Cherry blossom" },
+    { "question": "Which planet is closest to the Sun?", "answer": "Mercury" },
+    { "question": "What is the chemical symbol for silver?", "answer": "Ag" },
+    { "question": "How many continents are there on Earth?", "answer": "7" },
+    { "question": "What is the primary language spoken in Brazil?", "answer": "Portuguese" },
+    { "question": "Which mammalian species is capable of true flight?", "answer": "Bat" },
+    { "question": "What is the capital of Italy?", "answer": "Rome" },
+    { "question": "Who invented the telephone?", "answer": "Alexander Graham Bell" },
+    { "question": "What is the largest island in the world?", "answer": "Greenland" },
+    { "question": "Which vitamin is primarily produced when human skin is exposed to sunlight?", "answer": "Vitamin D" },
+    { "question": "What is the chemical symbol for sodium?", "answer": "Na" },
+    { "question": "Who directed the movie Jurassic Park?", "answer": "Steven Spielberg" },
+    { "question": "What is the capital of Egypt?", "answer": "Cairo" },
+    { "question": "Which noble gas is commonly used in glowing advertising signs?", "answer": "Neon" },
+    { "question": "What is the tallest breed of dog in the world?", "answer": "Great Dane" },
+    { "question": "Who composed the Fifth Symphony?", "answer": "Ludwig van Beethoven" },
+    { "question": "What is the main component of the mineral quartz?", "answer": "Silicon dioxide" },
+    { "question": "Which country gifted the Statue of Liberty to the United States?", "answer": "France" },
+    { "question": "What is the chemical symbol for potassium?", "answer": "K" },
+    { "question": "Who discovered gravity when observing an falling apple?", "answer": "Isaac Newton" },
+    { "question": "What is the capital of Germany?", "answer": "Berlin" },
+    { "question": "Which metal is liquid at room temperature?", "answer": "Mercury" },
+    { "question": "What is the smallest country in the world by area?", "answer": "Vatican City" },
+    { "question": "Who wrote Pride and Prejudice?", "answer": "Jane Austen" },
+    { "question": "What is the capital of Spain?", "answer": "Madrid" },
+    { "question": "Which organ in the human body produces insulin?", "answer": "Pancreas" },
+    { "question": "What is the chemical symbol for carbon dioxide?", "answer": "CO2" },
+    { "question": "Who painted The Last Supper?", "answer": "Leonardo da Vinci" },
+    { "question": "What is the capital of India?", "answer": "New Delhi" },
+    { "question": "Which planet rotates on its side like a rolling ball?", "answer": "Uranus" },
+    { "question": "What is the primary active ingredient in coffee and tea?", "answer": "Caffeine" },
+    { "question": "Who was the first President of the United States?", "answer": "George Washington" },
+    { "question": "What is the capital of Argentina?", "answer": "Buenos Aires" },
+    { "question": "Which ocean is the smallest by surface area?", "answer": "Arctic Ocean" },
+    { "question": "What is the chemical symbol for helium?", "answer": "He" },
+    { "question": "Who wrote The Odyssey?", "answer": "Homer" },
+    { "question": "What is the capital of South Korea?", "answer": "Seoul" },
+    { "question": "Which chemical element has the symbol 'O'?", "answer": "Oxygen" },
+    { "question": "What is the largest bone in the human body?", "answer": "Femur" },
+    { "question": "Who formulated the theory of relativity?", "answer": "Albert Einstein" },
+    { "question": "What is the capital of Mexico?", "answer": "Mexico City" },
+    { "question": "Which bird is universally recognized as a symbol of peace?", "answer": "Dove" },
+    { "question": "What is the chemical symbol for copper?", "answer": "Cu" },
+    { "question": "Who sculpted the statue of David?", "answer": "Michelangelo" },
+    { "question": "What is the capital of Greece?", "answer": "Athens" },
+    { "question": "Which planet is known as the Morning Star or Evening Star?", "answer": "Venus" },
+    { "question": "What is the main structural protein found in human hair and nails?", "answer": "Keratin" },
+    { "question": "Who wrote The Hobbit?", "answer": "J.R.R. Tolkien" },
+    { "question": "What is the capital of Brazil?", "answer": "Brasília" },
+    { "question": "Which gas is responsible for the characteristic smell after a lightning thunderstorm?", "answer": "Ozone" },
+    { "question": "What is the chemical symbol for lead?", "answer": "Pb" },
+    { "question": "Who painted The Scream?", "answer": "Edvard Munch" },
+    { "question": "What is the capital of Russia?", "answer": "Moscow" },
+    { "question": "Which ancient civilization built the Machu Picchu complex in the Andes?", "answer": "Inca Empire" },
+    { "question": "What is the chemical symbol for nitrogen?", "answer": "N" },
+    { "question": "Who wrote War and Peace?", "answer": "Leo Tolstoy" },
+    { "question": "What is the capital of China?", "answer": "Beijing" },
+    { "question": "Which reptile is famous for changing its skin color to match its environment?", "answer": "Chameleon" }
   ]
 }
