@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { Context, Markup, Telegraf } from 'telegraf';
 import { getDevWalletAddress } from './feeService';
+import { getRandomQuestionByCategory } from './triviaBankService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -84,6 +85,9 @@ export async function sendDevPanelMenu(ctx: Context, deps: DevPanelDeps) {
       [
         Markup.button.callback('🛒 Buy ($WIFH)', 'dev_buy'),
         Markup.button.callback('📈 Sell ($WIFH)', 'dev_swap_guide'),
+      ],
+      [
+        Markup.button.callback('🧠 Trivia Control', 'dev_trivia_control'),
       ],
       [
         Markup.button.callback('🔄 Refresh', 'dev_panel'),
@@ -214,6 +218,64 @@ export function setupDevPanelActions(
         ...Markup.inlineKeyboard([
           [Markup.button.callback('🚀 Fire Burn Sequence', 'confirm_dev_burn')],
           [Markup.button.callback('« Back to Dev Panel', 'dev_back')],
+        ]),
+      }
+    );
+  });
+
+  // ── Trivia Control ─────────────────────────────────────────────────────────
+  bot.action('dev_trivia_control', async (ctx) => {
+    if (!await isAuthorizedAdmin(ctx.from?.id)) return ctx.answerCbQuery('⛔ Unauthorized');
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(
+      `🧠 *Trivia Control Panel*\n\n` +
+      `Select a trivia category to fetch a random question for testing:`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🐕 Crypto & $WIFH Lore', 'trivia_test_crypto_wifh')],
+          [Markup.button.callback('₿ General Crypto', 'trivia_test_general_crypto')],
+          [Markup.button.callback('« Back to Dev Panel', 'dev_back')],
+        ]),
+      }
+    );
+  });
+
+  bot.action(/trivia_test_(.+)/, async (ctx) => {
+    if (!await isAuthorizedAdmin(ctx.from?.id)) return ctx.answerCbQuery('⛔ Unauthorized');
+    await ctx.answerCbQuery();
+    
+    const category = ctx.match[1] as 'crypto_wifh' | 'general_crypto';
+    const question = getRandomQuestionByCategory(category);
+    
+    if (!question) {
+      await ctx.editMessageText(
+        `❌ No questions found for category: ${category}`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('« Back to Trivia Control', 'dev_trivia_control')],
+          ]),
+        }
+      );
+      return;
+    }
+    
+    const optionsText = question.options.map((opt, idx) => {
+      const isCorrect = idx === question.correct;
+      return `• ${opt} ${isCorrect ? '✅' : ''}`;
+    }).join('\n');
+
+    await ctx.editMessageText(
+      `🧠 *Trivia Test: ${category === 'crypto_wifh' ? 'Crypto & $WIFH Lore' : 'General Crypto'}*\n\n` +
+      `*Q:* ${question.question}\n\n` +
+      `*Options:*\n${optionsText}\n\n` +
+      `_ID: ${question.id}_`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🔄 Reroll', `trivia_test_${category}`)],
+          [Markup.button.callback('« Back to Trivia Control', 'dev_trivia_control')],
         ]),
       }
     );

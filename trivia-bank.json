@@ -1,0 +1,366 @@
+{
+  "crypto_wifh": [
+    {
+      "id": "wifh_lore_01",
+      "question": "What blockchain network is DOGWIFH00D ($WIFH) deployed on?",
+      "options": ["Solana", "Robinhood Chain", "Base", "Arbitrum"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_02",
+      "question": "What is the signature outfit worn by the WIFH Shiba Inu mascot?",
+      "options": ["A tuxedo and top hat", "A spacesuit and helmet", "A dark forest green hoodie and dusty mauve beanie", "A red leather jacket and sunglasses"],
+      "correct": 2
+    },
+    {
+      "id": "wifh_lore_03",
+      "question": "What is the official Chain ID for the Robinhood Chain mainnet?",
+      "options": ["1", "42161", "4663", "8453"],
+      "correct": 2
+    },
+    {
+      "id": "wifh_lore_04",
+      "question": "What is the name of the public contract scanning and analysis tool built for the ecosystem?",
+      "options": ["Robinscan", "WIFH Inspector", "PawsScanner", "HoodieTrace"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_05",
+      "question": "On which decentralized exchange protocol do $WIFH trades primarily route via WETH liquidity pools?",
+      "options": ["Uniswap V3", "Sushiswap", "Curve", "PancakeSwap"],
+      "correct": 0
+    },
+    {
+      "id": "wifh_lore_06",
+      "question": "What native token is used to pay for gas fees on Robinhood Chain?",
+      "options": ["USDC", "WIFH", "ETH", "HOOD"],
+      "correct": 2
+    },
+    {
+      "id": "wifh_lore_07",
+      "question": "What interactive feature is found inside the WifhPaws Hatchery interface?",
+      "options": ["A staking vault", "An incubator pod", "A digital trading card press", "A token faucet"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_08",
+      "question": "Which technology framework is utilized under the hood by Robinhood Chain as an L2 rollup?",
+      "options": ["Optimism Bedrock", "Arbitrum Orbit", "Polygon CDK", "zkSync Era"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_09",
+      "question": "What type of cryptocurrency asset class is a core focus of the Robinhood Chain ecosystem infrastructure?",
+      "options": ["Meme coins only", "Tokenized real-world assets (RWAs) and stocks", "Government CBDCs", "Algorithmic stablecoins"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_10",
+      "question": "What color is the knitted beanie worn by the WIFH Shiba Inu mascot?",
+      "options": ["Dark forest green", "Dusty mauve", "Neon yellow", "Crimson red"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_11",
+      "question": "Which block explorer natively serves transactions on Robinhood Chain?",
+      "options": ["Etherscan", "Solscan", "Blockscout", "Polygonscan"],
+      "correct": 2
+    },
+    {
+      "id": "wifh_lore_12",
+      "question": "How are transaction fees handled on Robinhood Chain regarding priority queue tipping?",
+      "options": ["Higher tips speed up confirmation", "Transactions process strictly in order of arrival", "Tips go directly to validators as bribes", "Gas is completely free for all users"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_13",
+      "question": "What asset format does Robinhood Chain use for its wallet address architecture?",
+      "options": ["Solana base58 format", "Bitcoin bech32 format", "EVM-compatible hexadecimal format", "Cosmos SDK format"],
+      "correct": 2
+    },
+    {
+      "id": "wifh_lore_14",
+      "question": "What is the primary aesthetic theme associated with the WifhPaws mascot artwork?",
+      "options": ["Cyberpunk neon cyborgs", "Cozy streetwear Shiba Inu", "Medieval fantasy knights", "Pixel art space pirates"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_15",
+      "question": "Which backend database system pairs with the WifhPaws Telegram bot infrastructure?",
+      "options": ["MongoDB", "Supabase", "Firebase Realtime", "MySQL"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_16",
+      "question": "What encryption standard is utilized for securing sensitive wallet keys in the bot backend?",
+      "options": ["MD5 Hash", "AES-256-GCM", "RSA-512", "Base64 Encoding"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_17",
+      "question": "Where is the Telegram bot backend infrastructure typically hosted for continuous uptime?",
+      "options": ["Render", "AWS S3 Bucket", "Local Raspberry Pi", "Cloudflare Pages"],
+      "correct": 0
+    },
+    {
+      "id": "wifh_lore_18",
+      "question": "What is the primary utility of running a 'WIFH Inspector' community campaign?",
+      "options": ["Farming free testnet tokens", "Encouraging community research into liquidity, holder distribution, and metrics", "Spamming competing Telegram chats", "Mining proof-of-work blocks manually"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_19",
+      "question": "What framework powers the mini-app interactive components like the Hatchery pod?",
+      "options": ["React / Node.js web tech", "Unreal Engine 5", "Unity C# desktop build", "Flash Player plugin"],
+      "correct": 0
+    },
+    {
+      "id": "wifh_lore_20",
+      "question": "In the context of the project's visual storytelling, what animal is the main mascot?",
+      "options": ["A Golden Retriever", "A Shiba Inu", "A Husky", "A Corgi"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_21",
+      "question": "Which protocol class handles cross-chain bridging routes into Robinhood Chain?",
+      "options": ["Arbitrum canonical bridge and partner routes", "Lightning Network channels", "Inter-Blockchain Communication (IBC)", "XRP Ledger Gateways"],
+      "correct": 0
+    },
+    {
+      "id": "wifh_lore_22",
+      "question": "What developer language is predominantly used for building the bot services and API endpoints?",
+      "options": ["Python", "TypeScript / JavaScript", "C++", "Rust"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_23",
+      "question": "What mechanism ensures liquidity security for the token ecosystem?",
+      "options": ["Permanently locked liquidity", "Founder-withdrawable pools", "Daily liquidity shifting", "Manual pool pausing"],
+      "correct": 0
+    },
+    {
+      "id": "wifh_lore_24",
+      "question": "How do admins interact with the trivia system during a live community event?",
+      "options": ["Through an exclusive admin-only Telegram panel", "By modifying database lines live via phone call", "By editing smart contract bytecode", "By mailing support tickets"],
+      "correct": 0
+    },
+    {
+      "id": "wifh_lore_25",
+      "question": "What is the primary role of the WifhPaws Bot in the community channel?",
+      "options": ["Executing flash loans for members", "Onboarding, mini-games, trivia moderation, and web3 functions", "Automated crypto trading for profit guarantees", "Mining Bitcoin inside chat"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_26",
+      "question": "What specific tone does the project aim for in its community interactions?",
+      "options": ["Stuffy corporate finance memo style", "Fun, cozy, community-driven Web3 culture", "Strict academic computer science lectures", "Aggressive trading signal alerts"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_27",
+      "question": "What tool verifies transaction hashes and block states on the network?",
+      "options": ["Robinscan explorer", "GitHub commit viewer", "Telegram pinned message log", "Discord audit bot"],
+      "correct": 0
+    },
+    {
+      "id": "wifh_lore_28",
+      "question": "What deployment pipeline triggers automatic updates when code is pushed to GitHub?",
+      "options": ["Render continuous deployment", "Manual FTP file upload", "Bluetooth local transfer", "CD-ROM burning"],
+      "correct": 0
+    },
+    {
+      "id": "wifh_lore_29",
+      "question": "What makes the token supply structure distinct?",
+      "options": ["Infinite inflationary printing", "A fixed total supply cap", "Daily token rebase adjustments", "Random supply burning by AI"],
+      "correct": 1
+    },
+    {
+      "id": "wifh_lore_30",
+      "question": "What kind of environment is represented by the incubator pod in the WifhPaws mini-app?",
+      "options": ["A virtual digital organism hatchery habitat", "A crypto mining rig cooling tank", "A stock market trading floor simulator", "An automated liquidity vault"],
+      "correct": 0
+    }
+  ],
+  "general_crypto": [
+    {
+      "id": "gen_crypto_01",
+      "question": "What is the primary consensus mechanism used by Ethereum since The Merge?",
+      "options": ["Proof of Work", "Proof of Stake", "Proof of Authority", "Proof of History"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_02",
+      "question": "Who published the original Bitcoin whitepaper in October 2008?",
+      "options": ["Vitalik Buterin", "Satoshi Nakamoto", "Hal Finney", "Nick Szabo"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_03",
+      "question": "What does 'EVM' stand for in the context of smart contract blockchains?",
+      "options": ["Ethereum Virtual Machine", "Encrypted Value Manager", "Electronic Validator Module", "External Vector Method"],
+      "correct": 0
+    },
+    {
+      "id": "gen_crypto_04",
+      "question": "What is the maximum supply limit built into Bitcoin's protocol code?",
+      "options": ["100 Million", "21 Million", "1 Billion", "Infinite"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_05",
+      "question": "What term describes a decentralized exchange that uses mathematical formulas like x*y=k to price assets?",
+      "options": ["Order Book Exchange", "Automated Market Maker (AMM)", "Over-The-Counter Desk", "Custodial Brokerage"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_06",
+      "question": "What is an Optimistic Rollup designed to do for a Layer 1 blockchain like Ethereum?",
+      "options": ["Increase decentralization by adding more miners", "Scale throughput and lower fees by executing transactions off-chain", "Encrypt wallet private keys using quantum math", "Replace smart contracts with traditional databases"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_07",
+      "question": "What does 'DeFi' stand for in the cryptocurrency ecosystem?",
+      "options": ["Decentralized Finance", "Digital Federal Investment", "Data Feed Integration", "Defined Financial Indices"],
+      "correct": 0
+    },
+    {
+      "id": "gen_crypto_08",
+      "question": "What is the term for a digital asset designed to maintain a stable value relative to another asset, usually the US Dollar?",
+      "options": ["Governance Token", "Memecoin", "Stablecoin", "Utility Token"],
+      "correct": 2
+    },
+    {
+      "id": "gen_crypto_09",
+      "question": "What cryptographic function secures transaction data and creates block hashes in Bitcoin?",
+      "options": ["SHA-256", "MD5", "AES-128", "RSA-2048"],
+      "correct": 0
+    },
+    {
+      "id": "gen_crypto_10",
+      "question": "What is 'slippage' in decentralized token trading?",
+      "options": ["The fee paid to network miners", "The difference between the expected price of a trade and the execution price", "The time it takes for a transaction to clear", "The accidental loss of private keys"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_11",
+      "question": "What is a crypto wallet's private key used for?",
+      "options": ["Publicly displaying your transaction history", "Signing transactions and proving ownership of funds", "Contacting network customer support", "Increasing transaction speed automatically"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_12",
+      "question": "Which network introduced programmable smart contracts to the blockchain industry in 2015?",
+      "options": ["Bitcoin", "Ethereum", "Litecoin", "Ripple"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_13",
+      "question": "What is an Impermanent Loss in liquidity provisioning?",
+      "options": ["Permanent theft of funds by hackers", "A temporary valuation loss compared to holding tokens outright, caused by price divergence in an AMM", "The network gas fee penalty for removing liquidity early", "A fine imposed by validators"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_14",
+      "question": "What is a 'gas limit' in an Ethereum transaction?",
+      "options": ["The maximum price you are willing to pay per unit of computation", "The maximum amount of computational work you allow a transaction to consume", "The maximum number of transactions allowed in a single block", "The maximum wallet balance permitted on-chain"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_15",
+      "question": "What does 'DAO' stand for in Web3 governance structures?",
+      "options": ["Decentralized Autonomous Organization", "Digital Asset Operator", "Distributed Accounting Online", "Direct Access Obligation"],
+      "correct": 0
+    },
+    {
+      "id": "gen_crypto_16",
+      "question": "What is a seed phrase (recovery phrase) typically composed of?",
+      "options": ["A random string of binary code", "A sequence of 12 to 24 standardized dictionary words", "A biometric retina scan hash", "Your legal name and passport number"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_17",
+      "question": "What is the primary purpose of a blockchain bridge?",
+      "options": ["To connect physical real estate to NFTs", "To allow the transfer of tokens and data between different blockchain networks", "To speed up local internet connections", "To automatically execute flash loan arbitrage"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_18",
+      "question": "What is a 'whale' in cryptocurrency terminology?",
+      "options": ["An automated trading bot", "An individual or entity holding a massive amount of a specific cryptocurrency", "A high-security hardware wallet brand", "A developer building layer-2 infrastructure"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_19",
+      "question": "What is the event called when Bitcoin's block reward is cut in half every four years?",
+      "options": ["The Hard Fork", "The Halving", "The Genesis Block", "The Difficulty Drop"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_20",
+      "question": "What does 'TVL' stand for in DeFi analytics?",
+      "options": ["Total Value Locked", "Token Velocity Ledger", "Transaction Volume Limit", "Trading Value Liquidity"],
+      "correct": 0
+    },
+    {
+      "id": "gen_crypto_21",
+      "question": "What is a Layer 1 blockchain?",
+      "options": ["A decentralized application built on top of a token", "The base-layer underlying network that settles its own transactions and consensus", "A secondary web browser extension wallet", "A centralized database backup server"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_22",
+      "question": "What is the function of an Oracle in smart contracts?",
+      "options": ["To predict future token prices using artificial intelligence", "To securely fetch and feed real-world external data into on-chain smart contracts", "To encrypt private chats between traders", "To audit smart contract code for bugs"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_23",
+      "question": "What is a 'hard fork' in a blockchain network?",
+      "options": ["A physical hardware tool used for mining crypto", "A permanent divergence in blockchain history resulting in a new protocol rule set", "A temporary network congestion delay", "A method for splitting private keys"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_24",
+      "question": "What is a non-fungible token (NFT)?",
+      "options": ["A cryptocurrency that can be freely exchanged 1-to-1 like cash", "A unique cryptographic token on a blockchain representing ownership of a specific digital or physical asset", "A temporary token used exclusively for paying gas fees", "An algorithmic stablecoin pegged to gold"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_25",
+      "question": "What does 'DYOR' stand for in crypto community culture?",
+      "options": ["Define Your Own Risk", "Do Your Own Research", "Direct Yield Over Return", "Digital Year of Release"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_26",
+      "question": "What is a flash loan?",
+      "options": ["A high-interest personal loan from a centralized crypto lender", "An uncollateralized loan that must be borrowed and repaid within the exact same blockchain transaction block", "A short-term loan backed by physical gold", "A peer-to-peer loan executed via Telegram chat"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_27",
+      "question": "What is the main security risk of interacting with unverified smart contracts?",
+      "options": ["Your computer screen resolution might drop", "Malicious code could drain funds or grant unauthorized token approvals", "Your internet service provider will block your IP", "Your node hardware will overheat"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_28",
+      "question": "What is a multi-signature (multisig) wallet?",
+      "options": ["A wallet that requires multiple private key signatures from different parties to authorize transactions", "A wallet configured with multiple passwords for a single user", "An automated trading bot with multiple strategies", "A wallet that holds multiple different blockchain coins"],
+      "correct": 0
+    },
+    {
+      "id": "gen_crypto_29",
+      "question": "What does 'ATH' represent on a token price chart?",
+      "options": ["Average Trading History", "All-Time High", "Automatic Token Hardcap", "Annual Tax Holder"],
+      "correct": 1
+    },
+    {
+      "id": "gen_crypto_30",
+      "question": "What is the primary function of a decentralized block explorer?",
+      "options": ["To trade tokens directly with other users", "To allow anyone to transparently inspect addresses, transactions, blocks, and contract code on-chain", "To mine new cryptocurrency tokens using browser power", "To store seed phrases securely offline"],
+      "correct": 1
+    }
+  ]
+}
