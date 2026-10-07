@@ -7,7 +7,12 @@ import { ethers } from 'ethers';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { getPayoutConfig, setPayoutConfig } from './services/triviaPayoutService';
-import { getTriviaQuestionsByCategory } from './services/triviaBankService';
+import {
+  getTriviaQuestionsByCategory,
+  getActiveTriviaCategory,
+  setActiveTriviaCategory,
+  TriviaCategory,
+} from './services/triviaBankService';
 import { calculateAndRouteFee, dispatchFeesToDevWallet, getDevWalletAddress } from './services/feeService';
 import { sendDevPanelMenu, setupDevPanelActions, DevPanelDeps } from './services/devPanelService';
 import { registerRbacCommands } from './commands/rbacCommands';
@@ -1202,29 +1207,68 @@ bot.command(['devpanel', `devpanel@${BOT_USERNAME}`], async (ctx) => {
   }
 });
 
+function renderTriviaControlMenu() {
+  const activeCategory = getActiveTriviaCategory();
+  const isLore = activeCategory === 'crypto_wifh';
+  const isGk = activeCategory === 'general_knowledge';
+
+  const text =
+    `🧠 *Trivia Control Panel*\n\n` +
+    `Select the active category for live trivia games:\n\n` +
+    `• *🐕 Crypto & $WIFH Lore* — Deep ecosystem lore, tokenomics & history\n` +
+    `• *🌍 General Knowledge* — Broad general trivia questions\n\n` +
+    `🎯 *Current Category:* *${isLore ? 'Crypto & $WIFH Lore' : 'General Knowledge'}*\n\n` +
+    `_Note: Trivia games are played in community group chats. To start a game, run \`/start_trivia\` in your group chat._`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [
+      Markup.button.callback(
+        `${isLore ? '✅ ' : ''}🐕 Crypto & $WIFH Lore`,
+        'admin_trivia_set_crypto_wifh'
+      ),
+    ],
+    [
+      Markup.button.callback(
+        `${isGk ? '✅ ' : ''}🌍 General Knowledge`,
+        'admin_trivia_set_general_knowledge'
+      ),
+    ],
+    [
+      Markup.button.callback('⬅️ Back to Trivia Settings', 'admin_trivia'),
+    ],
+  ]);
+
+  return { text, keyboard };
+}
+
 bot.action('admin_trivia_control', async (ctx) => {
   if (!ctx.from || !(await isModOrHigher(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
   await ctx.answerCbQuery();
-  await ctx.editMessageText(
-    `🧠 *Trivia Control Panel*\n\n` +
-    `Select a category below to immediately start a live trivia game session:\n\n` +
-    `• *Crypto & $WIFH Lore* — Deep ecosystem lore, tokenomics & history\n` +
-    `• *General Knowledge* — Broad general trivia questions`,
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🐕 Crypto & $WIFH Lore', 'admin_trivia_start_crypto_wifh')],
-        [Markup.button.callback('🌍 General Knowledge', 'admin_trivia_start_general_knowledge')],
-        [Markup.button.callback('⬅️ Back to Trivia Settings', 'admin_trivia')],
-      ]),
-    }
-  );
+  const menu = renderTriviaControlMenu();
+  await ctx.editMessageText(menu.text, {
+    parse_mode: 'Markdown',
+    ...menu.keyboard,
+  });
 });
 
-bot.action(/admin_trivia_start_(crypto_wifh|general_knowledge)/, async (ctx) => {
+bot.action(/admin_trivia_set_(crypto_wifh|general_knowledge)/, async (ctx) => {
   if (!ctx.from || !(await isModOrHigher(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
-  const category = ctx.match[1] as 'crypto_wifh' | 'general_knowledge';
-  await startTriviaGame(ctx, category);
+  const targetCategory = ctx.match[1] as TriviaCategory;
+  const current = getActiveTriviaCategory();
+
+  if (current === targetCategory) {
+    return ctx.answerCbQuery('✅ This category is already active!');
+  }
+
+  setActiveTriviaCategory(targetCategory);
+  const label = targetCategory === 'crypto_wifh' ? 'Crypto & $WIFH Lore' : 'General Knowledge';
+  await ctx.answerCbQuery(`✅ Category set to: ${label}`);
+
+  const menu = renderTriviaControlMenu();
+  await ctx.editMessageText(menu.text, {
+    parse_mode: 'Markdown',
+    ...menu.keyboard,
+  });
 });
 
 bot.action('admin_trivia', async (ctx) => {
@@ -1234,14 +1278,18 @@ bot.action('admin_trivia', async (ctx) => {
   try {
     const config = await getPayoutConfig();
     const questionCount = await getQuestionCount();
+    const activeCategory = getActiveTriviaCategory();
+    const categoryLabel = activeCategory === 'crypto_wifh' ? '🐕 Crypto & $WIFH Lore' : '🌍 General Knowledge';
+
     const text = `🧠 *Trivia Settings & Help*\n\n` +
       `🏆 *Current Rewards (per game):*\n` +
       `🥇 1st Place: *${config.first} WIFH*\n` +
       `🥈 2nd Place: *${config.second} WIFH*\n` +
       `🥉 3rd Place: *${config.third} WIFH*\n\n` +
-      `📋 *Current Questions per Game:* \`${questionCount}\`\n\n` +
+      `📋 *Questions per Game:* \`${questionCount}\`\n` +
+      `📂 *Active Category:* *${categoryLabel}*\n\n` +
       `🛠️ *Trivia Commands (Admins Only):*\n` +
-      `• \`/start_trivia\` — Start a ${questionCount}-question trivia game in any group.\n` +
+      `• \`/start_trivia\` — Start a ${questionCount}-question trivia game in any group chat.\n` +
       `• \`/stop_trivia\` — Stop an active trivia game early.\n` +
       `• \`/setpayout <1st> <2nd> <3rd>\` — Update the payout rewards.\n` +
       `• \`/setquestions <number>\` — Change the number of questions per game.\n` +
@@ -2593,21 +2641,22 @@ bot.command('stop_trivia', async (ctx) => {
 
 async function startTriviaGame(
   ctx: any,
-  category: 'crypto_wifh' | 'general_knowledge' = 'crypto_wifh'
+  category: TriviaCategory = getActiveTriviaCategory()
 ) {
   const chatId = ctx.chat?.id;
   if (!chatId) return;
 
-  if (activeTriviaGames.has(chatId)) {
-    const msg = '⚠️ A trivia game is already running in this chat!';
-    if (ctx.callbackQuery) {
-      return ctx.answerCbQuery(msg, { show_alert: true });
-    }
-    return ctx.reply(msg);
+  if (ctx.chat?.type === 'private') {
+    return ctx.reply(
+      '⚠️ *Trivia games can only be played in group chats!*\n\n' +
+      'Please run `/start_trivia` inside your community group chat to begin a live session.\n\n' +
+      '💡 _You can select the active category anytime in_ `/admin` _→ Trivia Settings._',
+      { parse_mode: 'Markdown' }
+    );
   }
 
-  if (ctx.callbackQuery) {
-    await ctx.answerCbQuery('🚀 Starting trivia game...');
+  if (activeTriviaGames.has(chatId)) {
+    return ctx.reply('⚠️ A trivia game is already running in this chat!');
   }
 
   const categoryName = category === 'crypto_wifh' ? 'Crypto & $WIFH Lore' : 'General Knowledge';
@@ -2617,11 +2666,7 @@ async function startTriviaGame(
     const questions = getTriviaQuestionsByCategory(category, questionCount);
 
     if (!questions || questions.length === 0) {
-      const errMsg = `❌ No questions found for category: ${categoryName}`;
-      if (ctx.callbackQuery) {
-        return ctx.editMessageText(errMsg);
-      }
-      return ctx.reply(errMsg);
+      return ctx.reply(`❌ No questions found for category: ${categoryName}`);
     }
 
     const session: TriviaSession = {
@@ -2643,28 +2688,25 @@ async function startTriviaGame(
       `_Everyone who answers correctly earns 1 point!_\n\n` +
       `Get ready for Question 1...`;
 
-    if (ctx.callbackQuery) {
-      try {
-        await ctx.editMessageText(startText, { parse_mode: 'Markdown' });
-      } catch {
-        await ctx.reply(startText, { parse_mode: 'Markdown' });
-      }
-    } else {
-      await ctx.reply(startText, { parse_mode: 'Markdown' });
-    }
+    await ctx.reply(startText, { parse_mode: 'Markdown' });
 
     setTimeout(() => sendNextTriviaQuestion(ctx), 3000);
   } catch (err: any) {
     console.error('[Trivia] startTriviaGame error:', err);
-    if (ctx.callbackQuery) {
-      await ctx.answerCbQuery('❌ Failed to start trivia.', { show_alert: true });
-    } else {
-      await ctx.reply('❌ Failed to start trivia. Please try again later.');
-    }
+    await ctx.reply('❌ Failed to start trivia. Please try again later.');
   }
 }
 
 bot.command('start_trivia', async (ctx) => {
+  if (ctx.chat.type === 'private') {
+    return ctx.reply(
+      '⚠️ *Trivia games can only be played in group chats!*\n\n' +
+      'Please run `/start_trivia` inside your community group chat to begin a live session.\n\n' +
+      '💡 _You can select the active category anytime in_ `/admin` _→ Trivia Settings._',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
   if (!(await isModOrHigher(ctx.from!.id))) return ctx.reply('⛔ Only admins can start a trivia game.');
   
   if (activeTriviaGames.has(ctx.chat.id)) {
@@ -2675,22 +2717,14 @@ bot.command('start_trivia', async (ctx) => {
   const args = text.trim().split(/\s+/).slice(1);
   const arg = (args[0] || '').toLowerCase();
 
+  let category: TriviaCategory = getActiveTriviaCategory();
   if (arg === 'lore' || arg === 'crypto' || arg === 'wifh') {
-    return startTriviaGame(ctx, 'crypto_wifh');
+    category = 'crypto_wifh';
   } else if (arg === 'gk' || arg === 'general' || arg === 'knowledge') {
-    return startTriviaGame(ctx, 'general_knowledge');
+    category = 'general_knowledge';
   }
 
-  return ctx.reply(
-    `🧠 *Start Trivia Game*\n\nSelect a category to begin:`,
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🐕 Crypto & $WIFH Lore', 'admin_trivia_start_crypto_wifh')],
-        [Markup.button.callback('🌍 General Knowledge', 'admin_trivia_start_general_knowledge')],
-      ])
-    }
-  );
+  return startTriviaGame(ctx, category);
 });
 
 async function sendNextTriviaQuestion(ctx: any) {

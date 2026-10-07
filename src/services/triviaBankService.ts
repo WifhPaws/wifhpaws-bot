@@ -87,3 +87,41 @@ export function getTriviaQuestionsByCategory(
   }));
 }
 
+export type TriviaCategory = keyof TriviaBank;
+
+const CONFIG_PATH = path.resolve(process.cwd(), 'trivia-config.json');
+let activeCategoryCache: TriviaCategory = 'crypto_wifh';
+
+/**
+ * Get the currently active category for live trivia games.
+ */
+export function getActiveTriviaCategory(): TriviaCategory {
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
+      const data = JSON.parse(raw);
+      if (data.activeCategory === 'crypto_wifh' || data.activeCategory === 'general_knowledge') {
+        activeCategoryCache = data.activeCategory;
+      }
+    }
+  } catch (err) {
+    // Ignore and fallback to cache
+  }
+  return activeCategoryCache;
+}
+
+/**
+ * Set the currently active category for live trivia games.
+ */
+export function setActiveTriviaCategory(category: TriviaCategory): void {
+  activeCategoryCache = category;
+  try {
+    fs.writeFileSync(
+      CONFIG_PATH,
+      JSON.stringify({ activeCategory: category }, null, 2) + '\n',
+      'utf-8'
+    );
+  } catch (err) {
+    console.warn('[triviaBankService] Failed to write trivia-config.json:', err);
+  }
+}
