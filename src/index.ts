@@ -7,7 +7,7 @@ import { ethers } from 'ethers';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { getPayoutConfig, setPayoutConfig } from './services/triviaPayoutService';
-import { getRandomQuestionByCategory } from './services/triviaBankService';
+import { getTriviaQuestionsByCategory } from './services/triviaBankService';
 import { calculateAndRouteFee, dispatchFeesToDevWallet, getDevWalletAddress } from './services/feeService';
 import { sendDevPanelMenu, setupDevPanelActions, DevPanelDeps } from './services/devPanelService';
 import { registerRbacCommands } from './commands/rbacCommands';
@@ -1206,57 +1206,25 @@ bot.action('admin_trivia_control', async (ctx) => {
   if (!ctx.from || !(await isModOrHigher(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
   await ctx.answerCbQuery();
   await ctx.editMessageText(
-    `🧠 *Trivia Control Panel*\n\nSelect a trivia category to fetch a random question for testing:`,
+    `🧠 *Trivia Control Panel*\n\n` +
+    `Select a category below to immediately start a live trivia game session:\n\n` +
+    `• *Crypto & $WIFH Lore* — Deep ecosystem lore, tokenomics & history\n` +
+    `• *General Knowledge* — Broad general trivia questions`,
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('🐕 Crypto & $WIFH Lore', 'admin_trivia_test_crypto_wifh')],
-        [Markup.button.callback('₿ General Crypto', 'admin_trivia_test_general_crypto')],
-        [Markup.button.callback('🌍 General Knowledge', 'admin_trivia_test_general_knowledge')],
-        [Markup.button.callback('⬅️ Back', 'admin_trivia')],
+        [Markup.button.callback('🐕 Crypto & $WIFH Lore', 'admin_trivia_start_crypto_wifh')],
+        [Markup.button.callback('🌍 General Knowledge', 'admin_trivia_start_general_knowledge')],
+        [Markup.button.callback('⬅️ Back to Trivia Settings', 'admin_trivia')],
       ]),
     }
   );
 });
 
-bot.action(/admin_trivia_test_(.+)/, async (ctx) => {
+bot.action(/admin_trivia_start_(crypto_wifh|general_knowledge)/, async (ctx) => {
   if (!ctx.from || !(await isModOrHigher(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
-  await ctx.answerCbQuery();
-  
-  const category = ctx.match[1] as 'crypto_wifh' | 'general_crypto' | 'general_knowledge';
-  const question = getRandomQuestionByCategory(category);
-  
-  if (!question) {
-    await ctx.editMessageText(
-      `❌ No questions found for category: ${category}`,
-      {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback('⬅️ Back to Trivia Control', 'admin_trivia_control')],
-        ]),
-      }
-    );
-    return;
-  }
-  
-  const optionsText = question.options.map((opt, idx) => {
-    const isCorrect = idx === question.correct;
-    return `• ${opt} ${isCorrect ? '✅' : ''}`;
-  }).join('\n');
-
-  await ctx.editMessageText(
-    `🧠 *Trivia Test: ${category === 'crypto_wifh' ? 'Crypto & $WIFH Lore' : category === 'general_crypto' ? 'General Crypto' : 'General Knowledge'}*\n\n` +
-    `*Q:* ${question.question}\n\n` +
-    `*Options:*\n${optionsText}\n\n` +
-    `_ID: ${question.id}_`,
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔄 Reroll', `admin_trivia_test_${category}`)],
-        [Markup.button.callback('⬅️ Back to Trivia Control', 'admin_trivia_control')],
-      ]),
-    }
-  );
+  const category = ctx.match[1] as 'crypto_wifh' | 'general_knowledge';
+  await startTriviaGame(ctx, category);
 });
 
 bot.action('admin_trivia', async (ctx) => {
@@ -2583,7 +2551,7 @@ const server = app.listen(port, () => {
 // ==========================================
 // TRIVIA GAME LOOP
 // ==========================================
-import { fetchTriviaBatch, getQuestionCount, setQuestionCount } from './services/triviaService';
+import { getQuestionCount, setQuestionCount } from './services/triviaService';
 import { airdropToWinners, PayoutConfig } from './services/triviaPayoutService';
 import { getOrCreateUser } from './supabase';
 
@@ -2623,19 +2591,41 @@ bot.command('stop_trivia', async (ctx) => {
   await ctx.reply('🛑 *Trivia Game Stopped early by an admin.*', { parse_mode: 'Markdown' });
 });
 
-bot.command('start_trivia', async (ctx) => {
-  if (!(await isModOrHigher(ctx.from!.id))) return ctx.reply('⛔ Only admins can start a trivia game.');
-  
-  if (activeTriviaGames.has(ctx.chat.id)) {
-    return ctx.reply('⚠️ A trivia game is already running in this chat!');
+async function startTriviaGame(
+  ctx: any,
+  category: 'crypto_wifh' | 'general_knowledge' = 'crypto_wifh'
+) {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+
+  if (activeTriviaGames.has(chatId)) {
+    const msg = '⚠️ A trivia game is already running in this chat!';
+    if (ctx.callbackQuery) {
+      return ctx.answerCbQuery(msg, { show_alert: true });
+    }
+    return ctx.reply(msg);
   }
 
-  await ctx.reply('🎲 *Fetching Trivia Questions...*', { parse_mode: 'Markdown' });
+  if (ctx.callbackQuery) {
+    await ctx.answerCbQuery('🚀 Starting trivia game...');
+  }
+
+  const categoryName = category === 'crypto_wifh' ? 'Crypto & $WIFH Lore' : 'General Knowledge';
 
   try {
-    const questions = await fetchTriviaBatch();
+    const questionCount = await getQuestionCount();
+    const questions = getTriviaQuestionsByCategory(category, questionCount);
+
+    if (!questions || questions.length === 0) {
+      const errMsg = `❌ No questions found for category: ${categoryName}`;
+      if (ctx.callbackQuery) {
+        return ctx.editMessageText(errMsg);
+      }
+      return ctx.reply(errMsg);
+    }
+
     const session: TriviaSession = {
-      chatId: ctx.chat.id,
+      chatId,
       questions,
       currentIdx: 0,
       scores: {},
@@ -2643,15 +2633,64 @@ bot.command('start_trivia', async (ctx) => {
       acceptingAnswers: false,
       roundWinners: []
     };
-    activeTriviaGames.set(ctx.chat.id, session);
+    activeTriviaGames.set(chatId, session);
 
-    await ctx.reply(`🧠 *Trivia Game Started!* 🧠\n\nThere are ${questions.length} questions. You have 30 seconds per question — everyone who answers correctly gets 1 point!\n\nGet ready...`, { parse_mode: 'Markdown' });
-    
+    const startText =
+      `🧠 *Trivia Game Started!* 🧠\n\n` +
+      `📂 *Category:* ${categoryName}\n` +
+      `📋 *Questions:* ${questions.length}\n` +
+      `⏱️ *Time per question:* 30 seconds\n\n` +
+      `_Everyone who answers correctly earns 1 point!_\n\n` +
+      `Get ready for Question 1...`;
+
+    if (ctx.callbackQuery) {
+      try {
+        await ctx.editMessageText(startText, { parse_mode: 'Markdown' });
+      } catch {
+        await ctx.reply(startText, { parse_mode: 'Markdown' });
+      }
+    } else {
+      await ctx.reply(startText, { parse_mode: 'Markdown' });
+    }
+
     setTimeout(() => sendNextTriviaQuestion(ctx), 3000);
   } catch (err: any) {
-    console.error('Trivia Error:', err);
-    await ctx.reply('❌ Failed to start trivia. Please try again later.');
+    console.error('[Trivia] startTriviaGame error:', err);
+    if (ctx.callbackQuery) {
+      await ctx.answerCbQuery('❌ Failed to start trivia.', { show_alert: true });
+    } else {
+      await ctx.reply('❌ Failed to start trivia. Please try again later.');
+    }
   }
+}
+
+bot.command('start_trivia', async (ctx) => {
+  if (!(await isModOrHigher(ctx.from!.id))) return ctx.reply('⛔ Only admins can start a trivia game.');
+  
+  if (activeTriviaGames.has(ctx.chat.id)) {
+    return ctx.reply('⚠️ A trivia game is already running in this chat!');
+  }
+
+  const text = (ctx.message as any)?.text || '';
+  const args = text.trim().split(/\s+/).slice(1);
+  const arg = (args[0] || '').toLowerCase();
+
+  if (arg === 'lore' || arg === 'crypto' || arg === 'wifh') {
+    return startTriviaGame(ctx, 'crypto_wifh');
+  } else if (arg === 'gk' || arg === 'general' || arg === 'knowledge') {
+    return startTriviaGame(ctx, 'general_knowledge');
+  }
+
+  return ctx.reply(
+    `🧠 *Start Trivia Game*\n\nSelect a category to begin:`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🐕 Crypto & $WIFH Lore', 'admin_trivia_start_crypto_wifh')],
+        [Markup.button.callback('🌍 General Knowledge', 'admin_trivia_start_general_knowledge')],
+      ])
+    }
+  );
 });
 
 async function sendNextTriviaQuestion(ctx: any) {

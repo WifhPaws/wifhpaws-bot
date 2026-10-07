@@ -10,7 +10,6 @@ export interface CuratedTriviaQuestion {
 
 export interface TriviaBank {
   crypto_wifh: CuratedTriviaQuestion[];
-  general_crypto: CuratedTriviaQuestion[];
   general_knowledge: CuratedTriviaQuestion[];
 }
 
@@ -36,7 +35,6 @@ export function getTriviaBank(): TriviaBank {
     // Return an empty shell as a safe fallback
     return {
       crypto_wifh: [],
-      general_crypto: [],
       general_knowledge: []
     };
   }
@@ -65,3 +63,27 @@ export function getRandomQuestionByCategory(category: keyof TriviaBank): Curated
   const randomIndex = Math.floor(Math.random() * questions.length);
   return questions[randomIndex];
 }
+
+/**
+ * Fetch a batch of questions from the bank for a specific category,
+ * up to the requested count. Questions are shuffled to avoid repetition.
+ */
+export function getTriviaQuestionsByCategory(
+  category: keyof TriviaBank,
+  count: number = 10
+): Array<{ question: string; options: string[]; correctOptionId: number }> {
+  const bank = getTriviaBank();
+  const questions = bank[category] || [];
+
+  if (!questions || questions.length === 0) {
+    return [];
+  }
+
+  const shuffled = [...questions].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, count).map(q => ({
+    question: q.question,
+    options: q.options,
+    correctOptionId: q.correct
+  }));
+}
+
