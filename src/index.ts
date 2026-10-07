@@ -7,6 +7,7 @@ import { ethers } from 'ethers';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { getPayoutConfig, setPayoutConfig } from './services/triviaPayoutService';
+import { getRandomQuestionByCategory } from './services/triviaBankService';
 import { calculateAndRouteFee, dispatchFeesToDevWallet, getDevWalletAddress } from './services/feeService';
 import { sendDevPanelMenu, setupDevPanelActions, DevPanelDeps } from './services/devPanelService';
 import { registerRbacCommands } from './commands/rbacCommands';
@@ -1118,6 +1119,9 @@ async function sendAdminPanel(ctx: any) {
       { text: '❓ Help Guide', callback_data: 'admin_help' },
     ],
     [
+      { text: '🧠 Trivia Control', callback_data: 'admin_trivia_control' }
+    ],
+    [
       { text: '🏛️ Treasury Wallet', callback_data: 'action_treasury_home' },
     ],
     [
@@ -1199,6 +1203,62 @@ bot.command(['devpanel', `devpanel@${BOT_USERNAME}`], async (ctx) => {
     console.error('[/devpanel] Unhandled error:', err?.message || err);
     return ctx.reply('❌ Failed to open the Dev Panel. Please try again.');
   }
+});
+
+bot.action('admin_trivia_control', async (ctx) => {
+  if (!ctx.from || !(await hasAnyRbacRole(ctx.from.id) || isAdmin(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(
+    `🧠 *Trivia Control Panel*\n\nSelect a trivia category to fetch a random question for testing:`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🐕 Crypto & $WIFH Lore', 'admin_trivia_test_crypto_wifh')],
+        [Markup.button.callback('₿ General Crypto', 'admin_trivia_test_general_crypto')],
+        [Markup.button.callback('⬅️ Back', 'action_open_admin')],
+      ]),
+    }
+  );
+});
+
+bot.action(/admin_trivia_test_(.+)/, async (ctx) => {
+  if (!ctx.from || !(await hasAnyRbacRole(ctx.from.id) || isAdmin(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
+  await ctx.answerCbQuery();
+  
+  const category = ctx.match[1] as 'crypto_wifh' | 'general_crypto';
+  const question = getRandomQuestionByCategory(category);
+  
+  if (!question) {
+    await ctx.editMessageText(
+      `❌ No questions found for category: ${category}`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('⬅️ Back to Trivia Control', 'admin_trivia_control')],
+        ]),
+      }
+    );
+    return;
+  }
+  
+  const optionsText = question.options.map((opt, idx) => {
+    const isCorrect = idx === question.correct;
+    return `• ${opt} ${isCorrect ? '✅' : ''}`;
+  }).join('\n');
+
+  await ctx.editMessageText(
+    `🧠 *Trivia Test: ${category === 'crypto_wifh' ? 'Crypto & $WIFH Lore' : 'General Crypto'}*\n\n` +
+    `*Q:* ${question.question}\n\n` +
+    `*Options:*\n${optionsText}\n\n` +
+    `_ID: ${question.id}_`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔄 Reroll', `admin_trivia_test_${category}`)],
+        [Markup.button.callback('⬅️ Back to Trivia Control', 'admin_trivia_control')],
+      ]),
+    }
+  );
 });
 
 bot.action('admin_trivia', async (ctx) => {
