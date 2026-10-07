@@ -1203,7 +1203,7 @@ bot.command(['devpanel', `devpanel@${BOT_USERNAME}`], async (ctx) => {
 });
 
 bot.action('admin_trivia_control', async (ctx) => {
-  if (!ctx.from || !(await hasAnyRbacRole(ctx.from.id) || isAdmin(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
+  if (!ctx.from || !(await isModOrHigher(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
   await ctx.answerCbQuery();
   await ctx.editMessageText(
     `🧠 *Trivia Control Panel*\n\nSelect a trivia category to fetch a random question for testing:`,
@@ -1220,7 +1220,7 @@ bot.action('admin_trivia_control', async (ctx) => {
 });
 
 bot.action(/admin_trivia_test_(.+)/, async (ctx) => {
-  if (!ctx.from || !(await hasAnyRbacRole(ctx.from.id) || isAdmin(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
+  if (!ctx.from || !(await isModOrHigher(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
   await ctx.answerCbQuery();
   
   const category = ctx.match[1] as 'crypto_wifh' | 'general_crypto' | 'general_knowledge';
@@ -1298,8 +1298,8 @@ bot.action('admin_trivia', async (ctx) => {
 });
 
 bot.command(['setpayout', `setpayout@${BOT_USERNAME}`], async (ctx) => {
-  if (!ctx.from || !(await isSuperAdminOrHigherRBAC(ctx.from.id))) {
-    return ctx.reply('⛔ Unauthorized. Only Super Admins can configure trivia payouts.');
+  if (!ctx.from || !(await isModOrHigher(ctx.from.id))) {
+    return ctx.reply('⛔ Unauthorized. Only Mods or higher can configure trivia payouts.');
   }
 
   const message = ctx.message as any;
@@ -2852,7 +2852,7 @@ async function endTriviaGame(ctx: any) {
 // Command: /payout — Execute payout using predetermined config amounts
 bot.command(['payout', `payout@${BOT_USERNAME}`], async (ctx) => {
   const senderId = ctx.from?.id;
-  if (!senderId || (!(await isSuperAdminOrHigherRBAC(senderId)) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
+  if (!senderId || !(await isModOrHigher(senderId))) {
     return ctx.reply('⛔ Unauthorized. Only admins can execute trivia payouts.');
   }
 
@@ -3007,7 +3007,7 @@ bot.command(['payout', `payout@${BOT_USERNAME}`], async (ctx) => {
 // Command: /payout_trivia <1st_amount> [2nd_amount] [3rd_amount] — Manual amounts payout
 bot.command(['payout_trivia', `payout_trivia@${BOT_USERNAME}`], async (ctx) => {
   const senderId = ctx.from?.id;
-  if (!senderId || (!(await isSuperAdminOrHigherRBAC(senderId)) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
+  if (!senderId || !(await isModOrHigher(senderId))) {
     return ctx.reply('⛔ Unauthorized. Only admins can execute trivia payouts.');
   }
 
@@ -3138,7 +3138,7 @@ bot.command(['payout_trivia', `payout_trivia@${BOT_USERNAME}`], async (ctx) => {
 // Command: /skip_payout
 bot.command(['skip_payout', `skip_payout@${BOT_USERNAME}`], async (ctx) => {
   const senderId = ctx.from?.id;
-  if (!senderId || (!(await isSuperAdminOrHigherRBAC(senderId)) && !DEV_PANEL_ALLOWED_IDS.includes(senderId))) {
+  if (!senderId || !(await isModOrHigher(senderId))) {
     return ctx.reply('⛔ Unauthorized.');
   }
 
