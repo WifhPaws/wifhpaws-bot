@@ -1119,9 +1119,6 @@ async function sendAdminPanel(ctx: any) {
       { text: '❓ Help Guide', callback_data: 'admin_help' },
     ],
     [
-      { text: '🧠 Trivia Control', callback_data: 'admin_trivia_control' }
-    ],
-    [
       { text: '🏛️ Treasury Wallet', callback_data: 'action_treasury_home' },
     ],
     [
@@ -1215,7 +1212,8 @@ bot.action('admin_trivia_control', async (ctx) => {
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🐕 Crypto & $WIFH Lore', 'admin_trivia_test_crypto_wifh')],
         [Markup.button.callback('₿ General Crypto', 'admin_trivia_test_general_crypto')],
-        [Markup.button.callback('⬅️ Back', 'action_open_admin')],
+        [Markup.button.callback('🌍 General Knowledge', 'admin_trivia_test_general_knowledge')],
+        [Markup.button.callback('⬅️ Back', 'admin_trivia')],
       ]),
     }
   );
@@ -1225,7 +1223,7 @@ bot.action(/admin_trivia_test_(.+)/, async (ctx) => {
   if (!ctx.from || !(await hasAnyRbacRole(ctx.from.id) || isAdmin(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
   await ctx.answerCbQuery();
   
-  const category = ctx.match[1] as 'crypto_wifh' | 'general_crypto';
+  const category = ctx.match[1] as 'crypto_wifh' | 'general_crypto' | 'general_knowledge';
   const question = getRandomQuestionByCategory(category);
   
   if (!question) {
@@ -1247,7 +1245,7 @@ bot.action(/admin_trivia_test_(.+)/, async (ctx) => {
   }).join('\n');
 
   await ctx.editMessageText(
-    `🧠 *Trivia Test: ${category === 'crypto_wifh' ? 'Crypto & $WIFH Lore' : 'General Crypto'}*\n\n` +
+    `🧠 *Trivia Test: ${category === 'crypto_wifh' ? 'Crypto & $WIFH Lore' : category === 'general_crypto' ? 'General Crypto' : 'General Knowledge'}*\n\n` +
     `*Q:* ${question.question}\n\n` +
     `*Options:*\n${optionsText}\n\n` +
     `_ID: ${question.id}_`,
@@ -1285,6 +1283,7 @@ bot.action('admin_trivia', async (ctx) => {
       `_Example:_ \`/setpayout 100 50 25\`  |  \`/setquestions 15\``;
 
     const keyboard = [
+      [{ text: "🧠 Open Trivia Control", callback_data: "admin_trivia_control" }],
       [{ text: "⬅️ Back", callback_data: "action_open_admin" }]
     ];
 

@@ -11,6 +11,7 @@ export interface CuratedTriviaQuestion {
 export interface TriviaBank {
   crypto_wifh: CuratedTriviaQuestion[];
   general_crypto: CuratedTriviaQuestion[];
+  general_knowledge: CuratedTriviaQuestion[];
 }
 
 const TRIVIA_BANK_PATH = path.resolve(process.cwd(), 'trivia-bank.json');
@@ -35,7 +36,8 @@ export function getTriviaBank(): TriviaBank {
     // Return an empty shell as a safe fallback
     return {
       crypto_wifh: [],
-      general_crypto: []
+      general_crypto: [],
+      general_knowledge: []
     };
   }
 }

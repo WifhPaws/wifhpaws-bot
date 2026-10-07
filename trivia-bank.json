@@ -362,5 +362,19 @@
       "options": ["To trade tokens directly with other users", "To allow anyone to transparently inspect addresses, transactions, blocks, and contract code on-chain", "To mine new cryptocurrency tokens using browser power", "To store seed phrases securely offline"],
       "correct": 1
     }
+  ],
+  "general_knowledge": [
+    {
+      "id": "gen_know_01",
+      "question": "What is the capital of Japan?",
+      "options": ["Seoul", "Beijing", "Tokyo", "Bangkok"],
+      "correct": 2
+    },
+    {
+      "id": "gen_know_02",
+      "question": "Which planet is known as the Red Planet?",
+      "options": ["Venus", "Mars", "Jupiter", "Saturn"],
+      "correct": 1
+    }
   ]
 }
