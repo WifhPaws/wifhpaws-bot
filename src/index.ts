@@ -1215,28 +1215,31 @@ function renderTriviaControlMenu() {
   const text =
     `🧠 *Trivia Control Panel*\n\n` +
     `Select the active category for live trivia games:\n\n` +
-    `• *🐕 Crypto & $WIFH Lore* — Deep ecosystem lore, tokenomics & history\n` +
-    `• *🌍 General Knowledge* — Broad general trivia questions\n\n` +
-    `🎯 *Current Category:* *${isLore ? 'Crypto & $WIFH Lore' : 'General Knowledge'}*\n\n` +
-    `_Note: Trivia games are played in community group chats. To start a game, run \`/start_trivia\` in your group chat._`;
+    `• 🐕 *Crypto & $WIFH Lore* — Deep ecosystem lore, tokenomics & history\n` +
+    `• 🌍 *General Knowledge* — Broad general trivia questions\n\n` +
+    `🎯 *Current Category:* ${isLore ? '🐕 *Crypto & $WIFH Lore*' : '🌍 *General Knowledge*'}\n\n` +
+    `💡 *Note:* Trivia games are played in community group chats. To start a game, run \`/start_trivia\` in your group chat.`;
 
-  const keyboard = Markup.inlineKeyboard([
+  const keyboard = [
     [
-      Markup.button.callback(
-        `${isLore ? '✅ ' : ''}🐕 Crypto & $WIFH Lore`,
-        'admin_trivia_set_crypto_wifh'
-      ),
+      {
+        text: `${isLore ? '✅ ' : ''}🐕 Crypto & $WIFH Lore`,
+        callback_data: 'admin_trivia_set_crypto_wifh',
+      },
     ],
     [
-      Markup.button.callback(
-        `${isGk ? '✅ ' : ''}🌍 General Knowledge`,
-        'admin_trivia_set_general_knowledge'
-      ),
+      {
+        text: `${isGk ? '✅ ' : ''}🌍 General Knowledge`,
+        callback_data: 'admin_trivia_set_general_knowledge',
+      },
     ],
     [
-      Markup.button.callback('⬅️ Back to Trivia Settings', 'admin_trivia'),
+      {
+        text: '⬅️ Back to Trivia Settings',
+        callback_data: 'admin_trivia',
+      },
     ],
-  ]);
+  ];
 
   return { text, keyboard };
 }
@@ -1244,11 +1247,21 @@ function renderTriviaControlMenu() {
 bot.action('admin_trivia_control', async (ctx) => {
   if (!ctx.from || !(await isModOrHigher(ctx.from.id))) return ctx.answerCbQuery('⛔ Unauthorized');
   await ctx.answerCbQuery();
-  const menu = renderTriviaControlMenu();
-  await ctx.editMessageText(menu.text, {
-    parse_mode: 'Markdown',
-    ...menu.keyboard,
-  });
+  try {
+    const menu = renderTriviaControlMenu();
+    await ctx.editMessageText(menu.text, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: menu.keyboard },
+    });
+  } catch (err: any) {
+    console.error('[admin_trivia_control] error:', err?.message || err);
+    try {
+      const menu = renderTriviaControlMenu();
+      await ctx.editMessageText(menu.text.replace(/[*_`]/g, ''), {
+        reply_markup: { inline_keyboard: menu.keyboard },
+      });
+    } catch {}
+  }
 });
 
 bot.action(/admin_trivia_set_(crypto_wifh|general_knowledge)/, async (ctx) => {
@@ -1264,11 +1277,21 @@ bot.action(/admin_trivia_set_(crypto_wifh|general_knowledge)/, async (ctx) => {
   const label = targetCategory === 'crypto_wifh' ? 'Crypto & $WIFH Lore' : 'General Knowledge';
   await ctx.answerCbQuery(`✅ Category set to: ${label}`);
 
-  const menu = renderTriviaControlMenu();
-  await ctx.editMessageText(menu.text, {
-    parse_mode: 'Markdown',
-    ...menu.keyboard,
-  });
+  try {
+    const menu = renderTriviaControlMenu();
+    await ctx.editMessageText(menu.text, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: menu.keyboard },
+    });
+  } catch (err: any) {
+    console.error('[admin_trivia_set] error:', err?.message || err);
+    try {
+      const menu = renderTriviaControlMenu();
+      await ctx.editMessageText(menu.text.replace(/[*_`]/g, ''), {
+        reply_markup: { inline_keyboard: menu.keyboard },
+      });
+    } catch {}
+  }
 });
 
 bot.action('admin_trivia', async (ctx) => {
