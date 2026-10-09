@@ -1327,7 +1327,7 @@ bot.action('admin_trivia', async (ctx) => {
 
     const keyboard = [
       [{ text: "🧠 Open Trivia Control", callback_data: "admin_trivia_control" }],
-      [{ text: "⬅️ Back", callback_data: "action_open_admin" }]
+      [{ text: "⬅️ Back", callback_data: "admin_tools_menu" }]
     ];
 
     await ctx.editMessageText(text, {
@@ -1349,11 +1349,11 @@ bot.action('admin_scramble', async (ctx) => {
     `• \`/start_scramble\` — Start a 5-round scramble game in a group.\n` +
     `• \`/stop_scramble\` — Stop an active scramble game.\n` +
     `• \`/payout_scramble [amounts]\` — Distribute pending rewards to winners.\n` +
-    `  _(To set specific amounts manually: \`/payout_scramble <1st> [2nd] [3rd]\`)_\n\n` +
-    `_Example:_ \`/payout_scramble 100 50 25\`  |  \`/payout_scramble\``;
+    `  (To set specific amounts manually: \`/payout_scramble <1st> [2nd] [3rd]\`)\n\n` +
+    `*Example:* \`/payout_scramble 100 50 25\`  |  \`/payout_scramble\``;
 
   const keyboard = [
-    [{ text: "⬅️ Back", callback_data: "action_open_admin" }]
+    [{ text: "⬅️ Back", callback_data: "admin_tools_menu" }]
   ];
 
   try {
