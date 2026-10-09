@@ -16,6 +16,7 @@ import {
 import { calculateAndRouteFee, dispatchFeesToDevWallet, getDevWalletAddress } from './services/feeService';
 import { sendDevPanelMenu, setupDevPanelActions, DevPanelDeps } from './services/devPanelService';
 import { registerRbacCommands } from './commands/rbacCommands';
+import { setupScrambleGame, pendingScrambleWinners } from './services/scrambleGameService';
 import { cacheUserMiddleware, checkPermission } from './middleware/rbacGuards';
 import {
   isGlobalMaster,
@@ -425,7 +426,7 @@ function isSuperAdmin(userId: number): boolean {
   return ADMIN_USER_IDS.includes(idStr) || (adminSingle === idStr);
 }
 
-async function isModOrHigher(userId: number): Promise<boolean> {
+export async function isModOrHigher(userId: number): Promise<boolean> {
   if (isAdmin(userId)) return true;
   return await hasAnyRbacRole(userId); // Any role is at least Mod
 }
@@ -1121,6 +1122,9 @@ async function sendAdminPanel(ctx: any) {
     ],
     [
       { text: '💬 Trivia Settings', callback_data: 'admin_trivia' },
+      { text: '🔠 Scramble Control', callback_data: 'admin_scramble' },
+    ],
+    [
       { text: '❓ Help Guide', callback_data: 'admin_help' },
     ],
     [
@@ -1333,6 +1337,33 @@ bot.action('admin_trivia', async (ctx) => {
   } catch (err: any) {
     console.error('[Admin Trivia] Error:', err.message);
     await ctx.reply('❌ Failed to load trivia settings.');
+  }
+});
+
+bot.action('admin_scramble', async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!(await isModOrHigher(ctx.from!.id))) return ctx.reply('⛔ Unauthorized.');
+
+  const text = `🔠 *Word Scramble Settings & Control*\n\n` +
+    `🛠️ *Scramble Commands (Admins Only):*\n` +
+    `• \`/start_scramble\` — Start a 5-round scramble game in a group.\n` +
+    `• \`/stop_scramble\` — Stop an active scramble game.\n` +
+    `• \`/payout_scramble [amounts]\` — Distribute pending rewards to winners.\n` +
+    `  _(To set specific amounts manually: \`/payout_scramble <1st> [2nd] [3rd]\`)_\n\n` +
+    `_Example:_ \`/payout_scramble 100 50 25\`  |  \`/payout_scramble\``;
+
+  const keyboard = [
+    [{ text: "⬅️ Back", callback_data: "action_open_admin" }]
+  ];
+
+  try {
+    await ctx.editMessageText(text, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: keyboard }
+    });
+  } catch (err: any) {
+    console.error('[Admin Scramble] Error:', err.message);
+    await ctx.reply('❌ Failed to load scramble settings.');
   }
 });
 
@@ -3231,6 +3262,132 @@ bot.command(['payout_trivia', `payout_trivia@${BOT_USERNAME}`], async (ctx) => {
   }
 });
 
+// Command: /payout_scramble <1st_amount> [2nd_amount] [3rd_amount]
+bot.command(['payout_scramble', `payout_scramble@${BOT_USERNAME}`], async (ctx) => {
+  const senderId = ctx.from?.id;
+  if (!senderId || !(await isModOrHigher(senderId))) {
+    return ctx.reply('⛔ Unauthorized. Only admins can execute scramble payouts.');
+  }
+
+  const pending = pendingScrambleWinners.get(ctx.chat.id);
+  if (!pending || pending.length === 0) {
+    return ctx.reply('⚠️ No pending scramble winners found for this chat. Run a scramble game first with `/start_scramble`.', { parse_mode: 'Markdown' });
+  }
+
+  const args = (ctx.message as any).text.split(' ').filter(Boolean);
+  
+  let pConfig: PayoutConfig;
+  let amounts: number[] = [];
+
+  if (args.length >= 2) {
+    // Manual amounts
+    for (let i = 1; i < args.length && i <= 3; i++) {
+      const val = Number(args[i]);
+      if (!Number.isFinite(val) || val <= 0) {
+        return ctx.reply(`❌ Invalid amount '${args[i]}'. Please enter positive numerical amounts.`);
+      }
+      amounts.push(val);
+    }
+    pConfig = { first: amounts[0] || 0, second: amounts[1] || 0, third: amounts[2] || 0 };
+  } else {
+    // Use config
+    pConfig = await getPayoutConfig();
+    amounts = [pConfig.first, pConfig.second, pConfig.third];
+  }
+
+  const statusMsg = await ctx.reply('⏳ Processing scramble payouts from Treasury...');
+
+  try {
+    const receiptLines: string[] = [];
+
+    if (treasurySigner && WIFH_CONTRACT_ADDRESS) {
+      const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, treasurySigner);
+      const decimals = await contract.decimals();
+
+      for (let i = 0; i < pending.length && i < amounts.length; i++) {
+        const winner = pending[i];
+        const tokenAmount = amounts[i];
+        if (tokenAmount <= 0) continue;
+
+        const medal = winner.place === 1 ? '🥇' : (winner.place === 2 ? '🥈' : '🥉');
+
+        let targetAddress = winner.wallet;
+        if ((!targetAddress || !(ethers.isAddress as any)(targetAddress)) && winner.userId && winner.userId > 0) {
+          try {
+            const w = await getOrCreateWallet(winner.userId);
+            targetAddress = w?.public_address || '';
+          } catch (e) {
+            targetAddress = '';
+          }
+        }
+        if ((!targetAddress || !(ethers.isAddress as any)(targetAddress)) && winner.name) {
+          try {
+            const cleanUsername = winner.name.replace('@', '').trim();
+            const { data: dbUser } = await supabase
+              .from('users')
+              .select('telegram_id')
+              .ilike('username', cleanUsername)
+              .maybeSingle();
+            if (dbUser && dbUser.telegram_id) {
+              const w = await getOrCreateWallet(dbUser.telegram_id);
+              targetAddress = w?.public_address || '';
+            }
+          } catch (e) {
+            targetAddress = '';
+          }
+        }
+
+        if (targetAddress && (ethers.isAddress as any)(targetAddress)) {
+          const userAmount = ethers.parseUnits(tokenAmount.toString(), decimals);
+          const feeAmount = userAmount / BigInt(100); // 1% fee
+          const totalRequired = userAmount + feeAmount;
+
+          const treasuryBalance = await contract.balanceOf(treasurySigner.address);
+          if (treasuryBalance >= totalRequired) {
+            const txUser = await contract.transfer(targetAddress, userAmount);
+            await txUser.wait();
+            if (feeAmount > 0n) {
+              await dispatchFeesToDevWallet(feeAmount, contract, treasurySigner);
+            }
+            receiptLines.push(`${medal} ${winner.name}: *${tokenAmount} WIFH*`);
+          } else {
+            receiptLines.push(`${medal} ${winner.name}: *${tokenAmount} WIFH* (⚠️ Insufficient Treasury Balance)`);
+          }
+        } else {
+          receiptLines.push(`${medal} ${winner.name}: *${tokenAmount} WIFH* (⚠️ No Wallet Linked)`);
+        }
+      }
+    } else {
+      await airdropToWinners(pending as any, pConfig);
+      pending.forEach((w, idx) => {
+        const amt = amounts[idx] || 0;
+        if (amt > 0) {
+          const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
+          receiptLines.push(`${medal} ${w.name}: *${amt} WIFH*`);
+        }
+      });
+    }
+
+    pendingScrambleWinners.delete(ctx.chat.id);
+
+    const receiptText =
+      `🎉 *SCRAMBLE PAYOUT SUCCESSFUL!*\n\n` +
+      receiptLines.join('\n') +
+      `\n\n🐾 *The Hood has delivered!*`;
+
+    return ctx.telegram.editMessageText(
+      ctx.chat.id,
+      statusMsg.message_id,
+      undefined,
+      receiptText,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    console.error('[Scramble Payout Error]:', err);
+    return ctx.reply('❌ Payout failed. Please check treasury balance and try again.');
+  }
+});
+
 // Command: /skip_payout
 bot.command(['skip_payout', `skip_payout@${BOT_USERNAME}`], async (ctx) => {
   const senderId = ctx.from?.id;
@@ -3291,6 +3448,8 @@ async function launchBotWithRetry(maxRetries = 5, initialDelayMs = 3000) {
     }
   }
 }
+
+setupScrambleGame(bot, isModOrHigher);
 
 launchBotWithRetry();
 
