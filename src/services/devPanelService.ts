@@ -86,6 +86,9 @@ export async function sendDevPanelMenu(ctx: Context, deps: DevPanelDeps) {
         Markup.button.callback('📈 Sell ($WIFH)', 'dev_swap_guide'),
       ],
       [
+        Markup.button.callback('🔥 Burn ($WIFH)', 'dev_burn_menu'),
+      ],
+      [
         Markup.button.callback('🔄 Refresh', 'dev_panel'),
         Markup.button.callback('⬅️ Close', 'action_wallet_home'),
       ],
@@ -201,22 +204,88 @@ export function setupDevPanelActions(
     );
   });
 
-  // ── Buy-Back & Burn ────────────────────────────────────────────────────────
-  bot.action('dev_burn', async (ctx) => {
+  // ── Buy-Back & Burn Menu ───────────────────────────────────────────────────
+  bot.action('dev_burn_menu', async (ctx) => {
     if (!await isAuthorizedAdmin(ctx.from?.id)) return ctx.answerCbQuery('⛔ Unauthorized');
     await ctx.answerCbQuery();
     await ctx.editMessageText(
-      `🔥 *Dev Wallet – Buy-Back & Burn*\n\n` +
-      `Ready to permanently burn accumulated WIFH tokens from the **Dev Wallet**.\n` +
-      `Tokens will be routed to the \`0x000...dead\` burn address.`,
+      `🔥 *Dev Wallet – Burn $WIFH*\n\n` +
+      `Ready to permanently burn WIFH tokens from the **Dev Wallet**.\n` +
+      `Tokens will be sent to the dead address: \`0x000000000000000000000000000000000000dead\`\n\n` +
+      `Select an amount to burn, or use \`/dburn [amount]\` for a custom amount:`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
-          [Markup.button.callback('🚀 Fire Burn Sequence', 'confirm_dev_burn')],
+          [
+            Markup.button.callback('25%', 'dev_burn_pct_25'),
+            Markup.button.callback('50%', 'dev_burn_pct_50'),
+            Markup.button.callback('100%', 'dev_burn_pct_100'),
+          ],
           [Markup.button.callback('« Back to Dev Panel', 'dev_back')],
         ]),
       }
     );
+  });
+
+  bot.action(/^dev_burn_pct_(25|50|100)$/, async (ctx) => {
+    if (!await isAuthorizedAdmin(ctx.from?.id)) return ctx.answerCbQuery('⛔ Unauthorized');
+    if (!deps.devSigner) {
+      await ctx.answerCbQuery('❌ Dev Wallet private key is not configured.', { show_alert: true });
+      return;
+    }
+
+    const pct = parseInt(ctx.match[1], 10);
+    await ctx.answerCbQuery(`Initiating ${pct}% burn...`);
+    
+    try {
+      // 1. Gas Pre-Check Validation
+      const ethBalanceWei = await deps.provider.getBalance(deps.devSigner.address);
+      if (ethBalanceWei === 0n) { // strict 0.0000 ETH check or insufficient check
+        await ctx.reply('❌ Insufficient native ETH gas in Dev Wallet to process transaction. Please top up gas before burning tokens.');
+        return;
+      }
+
+      if (!deps.wifhContractAddress) {
+        await ctx.reply('❌ WIFH contract address is not configured.');
+        return;
+      }
+
+      const contract = new ethers.Contract(deps.wifhContractAddress, deps.erc20Abi, deps.devSigner);
+      const balanceWei = await contract.balanceOf(deps.devSigner.address);
+      
+      if (balanceWei === 0n) {
+        await ctx.reply('❌ No WIFH tokens available in Dev Wallet to burn.');
+        return;
+      }
+
+      const burnAmountWei = (balanceWei * BigInt(pct)) / 100n;
+      const decimals = await contract.decimals();
+      const burnAmountFmt = ethers.formatUnits(burnAmountWei, decimals);
+      
+      const statusMsg = await ctx.reply(`⏳ Processing ${pct}% Dev Wallet burn (${burnAmountFmt} WIFH) on Robinhood Chain...`);
+      
+      const deadAddress = '0x000000000000000000000000000000000000dead';
+      
+      // Execute the transfer (burn)
+      const tx = await contract.transfer(deadAddress, burnAmountWei, { gasLimit: 150000n });
+      await tx.wait();
+      
+      await ctx.telegram.editMessageText(
+        statusMsg.chat.id,
+        statusMsg.message_id,
+        undefined,
+        `✅ *Burn Successful!*\n\n🔥 Permanently removed \`${burnAmountFmt} WIFH\` from circulation.\n\n🔗 *Tx Hash:*\n\`${tx.hash}\``,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (err: any) {
+      console.error('[DevPanel] Burn error:', err);
+      // Fallback gas check if it failed due to insufficient funds for intrinsic tx
+      if (err.message?.includes('insufficient funds for intrinsic transaction cost')) {
+        await ctx.reply('❌ Insufficient native ETH gas in Dev Wallet to process transaction. Please top up gas before burning tokens.');
+      } else {
+        await ctx.reply(`❌ Burn transaction failed: ${err.shortMessage || err.message}`);
+      }
+    }
   });
 
   // ── Confirmations ──────────────────────────────────────────────────────────
@@ -236,19 +305,5 @@ export function setupDevPanelActions(
     );
   });
 
-  bot.action('confirm_dev_burn', async (ctx) => {
-    if (!await isAuthorizedAdmin(ctx.from?.id)) return ctx.answerCbQuery('⛔ Unauthorized');
-    await ctx.answerCbQuery('Burn sequence confirmed!');
-    await ctx.editMessageText(
-      `🔥 *Buy-Back & Burn Sequence*\n\n` +
-      `Burn request recorded. Use \`/dsend [amount] wifh 0x000000000000000000000000000000000000dead\` to execute.\n` +
-      `_Circulating supply reduction will be reflected on-chain after the transaction confirms._`,
-      {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback('« Back to Dev Panel', 'dev_back')],
-        ]),
-      }
-    );
-  });
+
 }

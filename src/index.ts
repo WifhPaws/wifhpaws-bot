@@ -1908,6 +1908,58 @@ bot.command('dsend', async (ctx) => {
   }
 });
 
+// Dev Wallet Burn Command (/dburn)
+bot.command('dburn', async (ctx) => {
+  if (ctx.chat.type !== 'private') return ctx.reply('🔒 Dev Wallet burns can only be initiated in private messages.');
+  if (!ctx.from || !DEV_PANEL_ALLOWED_IDS.includes(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
+  if (!devSigner) return ctx.reply('❌ Dev Wallet private key is not configured.');
+
+  const args = ctx.message.text.split(' ').filter(Boolean);
+  if (args.length < 2) {
+    return ctx.reply(
+      '⚠️ *Usage:* `/dburn [amount]`\n\n*Example:*\n• `/dburn 1000`',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  const amountStr = args[1];
+  const amountVal = Number(amountStr);
+  if (!Number.isFinite(amountVal) || amountVal <= 0) return ctx.reply('❌ Please enter a valid positive numerical amount.');
+
+  try {
+    const ethBalanceWei = await provider.getBalance(devSigner.address);
+    if (ethBalanceWei === 0n) return ctx.reply('❌ Insufficient native ETH gas in Dev Wallet to process transaction. Please top up gas before burning tokens.');
+
+    if (!WIFH_CONTRACT_ADDRESS) return ctx.reply('❌ WIFH contract address is not configured.');
+    const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, devSigner);
+
+    const decimals = await contract.decimals();
+    const amountWei = ethers.parseUnits(amountStr, decimals);
+    
+    const balanceWei = await contract.balanceOf(devSigner.address);
+    if (balanceWei < amountWei) return ctx.reply('❌ Insufficient WIFH tokens in Dev Wallet to burn this amount.');
+
+    const statusMsg = await ctx.reply(`⏳ Processing Dev Wallet burn of ${amountStr} WIFH on Robinhood Chain...`);
+    const deadAddress = '0x000000000000000000000000000000000000dead';
+    
+    const tx = await contract.transfer(deadAddress, amountWei, { gasLimit: 150000n });
+    await tx.wait();
+
+    return ctx.telegram.editMessageText(
+      ctx.chat.id,
+      statusMsg.message_id,
+      undefined,
+      `✅ *Burn Successful!*\n\n🔥 Permanently removed \`${amountStr} WIFH\` from circulation.\n\n🔗 *Tx Hash:*\n\`${tx.hash}\``,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    if (err.message?.includes('insufficient funds for intrinsic transaction cost')) {
+      return ctx.reply('❌ Insufficient native ETH gas in Dev Wallet to process transaction. Please top up gas before burning tokens.');
+    }
+    return ctx.reply(`❌ Burn transaction failed: ${err.message}`);
+  }
+});
+
 // Dev Wallet Swap Command (/dswap)
 bot.command('dswap', async (ctx) => {
   if (ctx.chat.type !== 'private') return ctx.reply('🔒 Dev Wallet swaps can only be executed in private messages.');
