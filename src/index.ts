@@ -16,7 +16,7 @@ import {
 import { calculateAndRouteFee, dispatchFeesToDevWallet, getDevWalletAddress } from './services/feeService';
 import { sendDevPanelMenu, setupDevPanelActions, DevPanelDeps } from './services/devPanelService';
 import { registerRbacCommands } from './commands/rbacCommands';
-import { setupScrambleGame, pendingScrambleWinners } from './services/scrambleGameService';
+import { setupScrambleGame, pendingScrambleWinners, getScramblePayoutConfig, setScramblePayoutConfig } from './services/scrambleGameService';
 import { cacheUserMiddleware, checkPermission } from './middleware/rbacGuards';
 import {
   isGlobalMaster,
@@ -1344,19 +1344,25 @@ bot.action('admin_scramble', async (ctx) => {
   await ctx.answerCbQuery();
   if (!(await isModOrHigher(ctx.from!.id))) return ctx.reply('⛔ Unauthorized.');
 
-  const text = `🔠 *Word Scramble Settings & Control*\n\n` +
-    `🛠️ *Scramble Commands (Admins Only):*\n` +
-    `• \`/start_scramble\` — Start a 5-round scramble game in a group.\n` +
-    `• \`/stop_scramble\` — Stop an active scramble game.\n` +
-    `• \`/payout_scramble [amounts]\` — Distribute pending rewards to winners.\n` +
-    `  (To set specific amounts manually: \`/payout_scramble <1st> [2nd] [3rd]\`)\n\n` +
-    `*Example:* \`/payout_scramble 100 50 25\`  |  \`/payout_scramble\``;
-
-  const keyboard = [
-    [{ text: "⬅️ Back", callback_data: "admin_tools_menu" }]
-  ];
-
   try {
+    const config = await getScramblePayoutConfig();
+    const text = `🔠 *Word Scramble Settings & Control*\n\n` +
+      `🏆 *Current Rewards (per game):*\n` +
+      `🥇 1st Place: *${config.first} WIFH*\n` +
+      `🥈 2nd Place: *${config.second} WIFH*\n` +
+      `🥉 3rd Place: *${config.third} WIFH*\n\n` +
+      `🛠️ *Scramble Commands (Admins Only):*\n` +
+      `• \`/start_scramble\` — Start a 5-round scramble game in a group.\n` +
+      `• \`/stop_scramble\` — Stop an active scramble game.\n` +
+      `• \`/setpayout_scramble <1st> <2nd> <3rd>\` — Update default payout rewards.\n` +
+      `• \`/payout_scramble [amounts]\` — Distribute pending rewards to winners.\n` +
+      `  (To set specific amounts manually: \`/payout_scramble <1st> [2nd] [3rd]\`)\n\n` +
+      `*Example:* \`/setpayout_scramble 100 50 25\`  |  \`/payout_scramble\``;
+
+    const keyboard = [
+      [{ text: "⬅️ Back", callback_data: "admin_tools_menu" }]
+    ];
+
     await ctx.editMessageText(text, {
       parse_mode: 'Markdown',
       reply_markup: { inline_keyboard: keyboard }
@@ -1364,6 +1370,44 @@ bot.action('admin_scramble', async (ctx) => {
   } catch (err: any) {
     console.error('[Admin Scramble] Error:', err.message);
     await ctx.reply('❌ Failed to load scramble settings.');
+  }
+});
+
+bot.command(['setpayout_scramble', `setpayout_scramble@${BOT_USERNAME}`], async (ctx) => {
+  if (!ctx.from || !(await isModOrHigher(ctx.from.id))) {
+    return ctx.reply('⛔ Unauthorized. Only Mods or higher can configure scramble payouts.');
+  }
+
+  const message = ctx.message as any;
+  const text = message?.text || '';
+  const args = text.trim().split(/\s+/).slice(1);
+
+  if (args.length !== 3) {
+    return ctx.reply(
+      '⚠️ *Usage:*\n`/setpayout_scramble <1st_place_amount> <2nd_place_amount> <3rd_place_amount>`\n\n' +
+      '_Example: `/setpayout_scramble 100 50 25`_',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  const [first, second, third] = args.map(Number);
+
+  if (!Number.isFinite(first) || !Number.isFinite(second) || !Number.isFinite(third)) {
+    return ctx.reply('❌ Invalid amounts. Please provide valid numerical values.');
+  }
+
+  try {
+    await setScramblePayoutConfig(first, second, third);
+    return ctx.reply(
+      `✅ *Scramble Payouts Updated!*\n\n` +
+      `🥇 1st Place: *${first} WIFH*\n` +
+      `🥈 2nd Place: *${second} WIFH*\n` +
+      `🥉 3rd Place: *${third} WIFH*`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err) {
+    console.error('[setpayout_scramble error]', err);
+    return ctx.reply('❌ Failed to update scramble payouts in the database.');
   }
 });
 
@@ -3276,7 +3320,7 @@ bot.command(['payout_scramble', `payout_scramble@${BOT_USERNAME}`], async (ctx) 
 
   const args = (ctx.message as any).text.split(' ').filter(Boolean);
   
-  let pConfig: PayoutConfig;
+  let pConfig: any;
   let amounts: number[] = [];
 
   if (args.length >= 2) {
@@ -3291,7 +3335,7 @@ bot.command(['payout_scramble', `payout_scramble@${BOT_USERNAME}`], async (ctx) 
     pConfig = { first: amounts[0] || 0, second: amounts[1] || 0, third: amounts[2] || 0 };
   } else {
     // Use config
-    pConfig = await getPayoutConfig();
+    pConfig = await getScramblePayoutConfig();
     amounts = [pConfig.first, pConfig.second, pConfig.third];
   }
 

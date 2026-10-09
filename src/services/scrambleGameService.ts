@@ -3,7 +3,37 @@ import path from 'path';
 import { Telegraf, Context } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { getOrCreateUser } from '../supabase';
+import { supabase } from '../db/supabaseClient';
 
+export interface ScramblePayoutConfig {
+  first: number;
+  second: number;
+  third: number;
+}
+
+export const setScramblePayoutConfig = async (first: number, second: number, third: number): Promise<void> => {
+  const { error } = await supabase
+    .from('trivia_payouts')
+    .upsert({ id: 2, first_amount: first, second_amount: second, third_amount: third }, { onConflict: 'id' });
+  if (error) throw error;
+};
+
+export const getScramblePayoutConfig = async (): Promise<ScramblePayoutConfig> => {
+  const { data, error } = await supabase
+    .from('trivia_payouts')
+    .select('first_amount, second_amount, third_amount')
+    .eq('id', 2)
+    .maybeSingle();
+  if (error) {
+    console.warn('Failed to fetch scramble payouts:', error.message);
+    return { first: 0, second: 0, third: 0 };
+  }
+  return {
+    first: Number(data?.first_amount ?? 0),
+    second: Number(data?.second_amount ?? 0),
+    third: Number(data?.third_amount ?? 0),
+  };
+};
 interface ScrambleWord {
   word: string;
   hint: string;
