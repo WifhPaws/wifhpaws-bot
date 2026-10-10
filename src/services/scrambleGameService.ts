@@ -134,16 +134,8 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
 
     activeScrambleGames.set(ctx.chat.id, session);
 
-    const startText = 
-      `🧢 *HOODIE'S CIPHER STARTED!* 🧢\n\n` +
-      `📋 *Rounds:* 5\n` +
-      `⏱️ *Time per word:* 30 seconds\n\n` +
-      `_Top 3 fastest answers win points! (7s grace period)_\n\n` +
-      `Get ready for Round 1...`;
-
-    await ctx.reply(startText, { parse_mode: 'Markdown' });
-
-    setTimeout(() => sendNextScrambleWord(ctx, session), 3000);
+    // No separate STARTED! message, just start the game
+    setTimeout(() => sendNextScrambleWord(ctx, session), 1000);
   });
 
   // Command to stop early
@@ -216,13 +208,14 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
     if (session.timer) clearTimeout(session.timer);
     if (session.graceTimer) clearTimeout(session.graceTimer);
 
-    let outcomeText = '';
+    let winnersText = '';
     
     if (session.roundWinners.length === 0) {
-      outcomeText = `❌ *Time's up! Nobody answered correctly.*`;
+      winnersText = `❌ Time's up! Nobody answered correctly.`;
     } else {
-      outcomeText = `🏆 *ROUND WINNERS:*\n`;
+      winnersText = `🏆 WINNERS:\n`;
       const rewards = [50, 25, 10];
+      const medals = ['🥇', '🥈', '🥉'];
       session.roundWinners.forEach((w, idx) => {
         const pts = rewards[idx] || 0;
         if (!session.scores[w.userId]) {
@@ -230,26 +223,22 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
         }
         session.scores[w.userId].score += pts;
         
-        const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : '🥉');
-        outcomeText += `${medal} ${w.name} (+${pts} Pts) — *${w.timeTakenSec.toFixed(1)}s*\n`;
+        const medal = medals[idx] || '🏅';
+        winnersText += `${medal} ${w.name} (+${pts} Pts) — ${w.timeTakenSec.toFixed(1)}s\n`;
       });
     }
 
     const resultContent = 
-      `🧢 *HOODIE'S CIPHER*  •  *ROUND ${session.currentRound + 1}/${session.maxRounds} CONCLUDED*\n` +
-      `───────────────────────────────\n` +
-      `❓ *Scramble:* ${session.scrambled}\n` +
-      `✅ *Answer:* ${session.currentWord.toUpperCase()}\n` +
-      `───────────────────────────────\n` +
-      `${outcomeText}`;
+      `🧢 HOODIE'S CIPHER • ROUND ${session.currentRound + 1}/${session.maxRounds} CONCLUDED\n\n` +
+      `❓ Scramble: ${session.scrambled.toUpperCase()}\n` +
+      `✅ Answer: ${session.currentWord.toUpperCase()}\n\n` +
+      `${winnersText}`;
 
     try {
       await ctx.telegram.editMessageText(
         session.chatId,
         session.messageId,
-        undefined,
-        resultContent,
-        { parse_mode: 'Markdown' }
+        resultContent
       );
     } catch (error) {}
 
@@ -286,14 +275,13 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
     session.acceptingAnswers = true;
     session.startTime = Date.now();
 
+    const cleanWord = session.scrambled.toUpperCase().split('').join(' ');
+
     const msg = await ctx.reply(
-      `🧢 *HOODIE'S CIPHER*  •  *ROUND ${session.currentRound + 1}/${session.maxRounds}*\n` +
-      `░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\n` +
-      `🔀 *Scramble:* ${session.scrambled}\n` +
-      `💡 *Hint:* ${session.currentHint}\n` +
-      `░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\n\n` +
-      `⚡ *Reward:* Top 3 Pts  |  ⏳ *30s*`, 
-      { parse_mode: 'Markdown' }
+      `🧢 HOODIE'S CIPHER • ROUND ${session.currentRound + 1}/${session.maxRounds}\n\n` +
+      `❓ Scramble: ${cleanWord}\n` +
+      `💡 Hint: ${session.currentHint}\n\n` +
+      `⚡ Reward: Top 3 Pts | ⏳ 30s`
     );
 
     session.messageId = msg.message_id;
@@ -309,14 +297,14 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
 
     const scoreEntries = Object.entries(session.scores);
     if (scoreEntries.length === 0) {
-      return ctx.reply('🏁 *Scramble Finished!*\n\nNobody scored any points! 😢', { parse_mode: 'Markdown' });
+      return ctx.reply('🏁 Scramble Finished!\nNobody scored any points! 😢');
     }
 
     const sortedScores = scoreEntries
       .map(([userIdStr, data]) => ({ userId: Number(userIdStr), ...data }))
       .sort((a, b) => b.score - a.score);
 
-    let text = '🏁 *Scramble Game Finished! Final Scores:*\n\n';
+    let text = '🏁 Scramble Game Finished! Final Scores:\n\n';
     
     const pending: PendingScrambleWinner[] = [];
     sortedScores.forEach((p, idx) => {
@@ -347,6 +335,6 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
       await ctx.reply(pendingText, { parse_mode: 'Markdown' });
     }
 
-    await ctx.reply(text, { parse_mode: 'Markdown' });
+    await ctx.reply(text);
   }
 }

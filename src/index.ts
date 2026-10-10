@@ -2847,17 +2847,8 @@ async function startTriviaGame(
     };
     activeTriviaGames.set(chatId, session);
 
-    const startText =
-      `⚡ *WIFH TRIVIA STARTED!* ⚡\n\n` +
-      `📂 *Category:* ${categoryName}\n` +
-      `📋 *Questions:* ${questions.length}\n` +
-      `⏱️ *Time per question:* 30 seconds\n\n` +
-      `_Top 3 fastest correct answers win points! (7s grace period)_\n\n` +
-      `Get ready for Question 1...`;
-
-    await ctx.reply(startText, { parse_mode: 'Markdown' });
-
-    setTimeout(() => sendNextTriviaQuestion(ctx), 3000);
+    // No "STARTED!" chat bubble, we directly send the first question.
+    setTimeout(() => sendNextTriviaQuestion(ctx), 1000);
   } catch (err: any) {
     console.error('[Trivia] startTriviaGame error:', err);
     await ctx.reply('❌ Failed to start trivia. Please try again later.');
@@ -2912,12 +2903,12 @@ async function sendNextTriviaQuestion(ctx: any) {
     return [{ text: opt, callback_data: `tq_${idx}` }];
   });
 
-  const questionCard =
-    `⚡ *WIFH TRIVIA*  •  *QUESTION ${session.currentIdx + 1}/${session.questions.length}*\n` +
-    `░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\n` +
-    `❓ *Question:* ${q.question}\n` +
-    `░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\n\n` +
-    `⚡ *Reward:* Top 3 Pts  |  ⏳ *30s*`;
+  const categoryName = session.questions[0].category || 'Crypto & WIFH Lore'; // fallback
+  const questionCard = 
+    `⚡ WIFH TRIVIA • QUESTION ${session.currentIdx + 1}/${session.questions.length}\n\n` +
+    `❓ Question: ${q.question}\n` +
+    `🏷️ Category: ${categoryName}\n\n` +
+    `⚡ Reward: Top 3 Pts | ⏳ 30s`;
 
   const msg = await ctx.reply(questionCard, {
     parse_mode: 'Markdown',
@@ -2955,26 +2946,25 @@ async function finalizeTriviaRound(ctx: any, session: TriviaSession) {
     session.scores[w.userId].score += pts;
   });
 
-  let outcomeText = '';
+  let winnersText = '';
 
   if (winners.length === 0) {
-    outcomeText = `❌ Time's up! Nobody answered correctly.`;
+    winnersText = `❌ Time's up! Nobody answered correctly.`;
   } else {
-    outcomeText = `🏆 *ROUND WINNERS:*\n`;
+    winnersText = `🏆 WINNERS:\n`;
+    const medals = ['🥇', '🥈', '🥉'];
     winners.forEach((w, idx) => {
       const pts = rewards[idx] || 0;
-      const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : '🥉');
-      outcomeText += `${medal} ${w.name} (+${pts} Pts) — *${w.timeTakenSec.toFixed(1)}s*\n`;
+      const medal = medals[idx] || '🏅';
+      winnersText += `${medal} ${w.name} (+${pts} Pts) — ${w.timeTakenSec.toFixed(1)}s\n`;
     });
   }
 
   const resultContent =
-    `⚡ *WIFH TRIVIA*  •  *QUESTION ${session.currentIdx + 1}/${session.questions.length} CONCLUDED*\n` +
-    `───────────────────────────────\n` +
-    `❓ *Question:* ${q.question}\n` +
-    `✅ *Answer:* ${correctAnswer}\n` +
-    `───────────────────────────────\n` +
-    `${outcomeText}`;
+    `⚡ WIFH TRIVIA • QUESTION ${session.currentIdx + 1}/${session.questions.length} CONCLUDED\n\n` +
+    `❓ Question: ${q.question}\n` +
+    `✅ Answer: ${correctAnswer}\n\n` +
+    `${winnersText}`;
 
   try {
     await ctx.telegram.editMessageText(session.chatId, session.messageId, undefined, resultContent, { parse_mode: 'Markdown' });
@@ -3064,12 +3054,7 @@ async function endTriviaGame(ctx: any) {
   // Edge-case: nobody answered correctly
   if (!scoreEntries || scoreEntries.length === 0) {
     try {
-      await ctx.reply(
-        `⚡ *WIFH TRIVIA FINISHED*\n` +
-        `───────────────────────────────\n\n` +
-        `Nobody scored any points! 😢`,
-        { parse_mode: 'Markdown' }
-      );
+      await ctx.reply(`🏁 Trivia Finished! Nobody scored any points! 😢`);
     } catch (msgErr: any) {
       console.error('[endTriviaGame] Failed to send empty-scores message:', msgErr?.message || msgErr);
     }
@@ -3114,9 +3099,7 @@ async function endTriviaGame(ctx: any) {
 
   // ── Phase 4: Send final leaderboard ──
   try {
-    let text =
-      `⚡ *WIFH TRIVIA FINISHED — FINAL SCORES*\n` +
-      `───────────────────────────────\n\n`;
+    let text = `🏁 Trivia Finished! Here are the final scores:\n\n`;
     sortedScores.forEach((p, idx) => {
       let medal = '';
       if (idx === 0) medal = '🥇';
@@ -3124,7 +3107,7 @@ async function endTriviaGame(ctx: any) {
       else if (idx === 2) medal = '🥉';
       text += `${medal ? medal + ' ' : ''}${idx + 1}. ${p.name} — ${p.score} pts\n`;
     });
-    await ctx.reply(text, { parse_mode: 'Markdown' });
+    await ctx.reply(text);
   } catch (leaderErr: any) {
     console.error('[endTriviaGame] Error sending leaderboard:', leaderErr?.message || leaderErr);
   }
