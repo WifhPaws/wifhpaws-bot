@@ -16,7 +16,7 @@ import {
 import { calculateAndRouteFee, dispatchFeesToDevWallet, getDevWalletAddress } from './services/feeService';
 import { sendDevPanelMenu, setupDevPanelActions, DevPanelDeps } from './services/devPanelService';
 import { registerRbacCommands } from './commands/rbacCommands';
-import { setupScrambleGame, pendingScrambleWinners, getScramblePayoutConfig, setScramblePayoutConfig } from './services/scrambleGameService';
+import { setupScrambleGame, pendingScrambleWinners } from './services/scrambleGameService';
 import { cacheUserMiddleware, checkPermission } from './middleware/rbacGuards';
 import {
   isGlobalMaster,
@@ -1344,25 +1344,19 @@ bot.action('admin_scramble', async (ctx) => {
   await ctx.answerCbQuery();
   if (!(await isModOrHigher(ctx.from!.id))) return ctx.reply('⛔ Unauthorized.');
 
+  const text = `🔠 *Word Scramble Settings & Control*\n\n` +
+    `🛠️ *Scramble Commands (Admins Only):*\n` +
+    `• \`/start_scramble\` — Start a 5-round scramble game in a group.\n` +
+    `• \`/stop_scramble\` — Stop an active scramble game.\n` +
+    `• \`/payout_scramble [amounts]\` — Distribute pending rewards to winners.\n` +
+    `  (To set specific amounts manually: \`/payout_scramble <1st> [2nd] [3rd]\`)\n\n` +
+    `*Example:* \`/payout_scramble 100 50 25\`  |  \`/payout_scramble\``;
+
+  const keyboard = [
+    [{ text: "⬅️ Back", callback_data: "admin_tools_menu" }]
+  ];
+
   try {
-    const config = await getScramblePayoutConfig();
-    const text = `🔠 *Word Scramble Settings & Control*\n\n` +
-      `🏆 *Current Rewards (per game):*\n` +
-      `🥇 1st Place: *${config.first} WIFH*\n` +
-      `🥈 2nd Place: *${config.second} WIFH*\n` +
-      `🥉 3rd Place: *${config.third} WIFH*\n\n` +
-      `🛠️ *Scramble Commands (Admins Only):*\n` +
-      `• \`/start_scramble\` — Start a 5-round scramble game in a group.\n` +
-      `• \`/stop_scramble\` — Stop an active scramble game.\n` +
-      `• \`/setpayout_scramble <1st> <2nd> <3rd>\` — Update default payout rewards.\n` +
-      `• \`/payout_scramble [amounts]\` — Distribute pending rewards to winners.\n` +
-      `  (To set specific amounts manually: \`/payout_scramble <1st> [2nd] [3rd]\`)\n\n` +
-      `*Example:* \`/setpayout_scramble 100 50 25\`  |  \`/payout_scramble\``;
-
-    const keyboard = [
-      [{ text: "⬅️ Back", callback_data: "admin_tools_menu" }]
-    ];
-
     await ctx.editMessageText(text, {
       parse_mode: 'Markdown',
       reply_markup: { inline_keyboard: keyboard }
@@ -1370,44 +1364,6 @@ bot.action('admin_scramble', async (ctx) => {
   } catch (err: any) {
     console.error('[Admin Scramble] Error:', err.message);
     await ctx.reply('❌ Failed to load scramble settings.');
-  }
-});
-
-bot.command(['setpayout_scramble', `setpayout_scramble@${BOT_USERNAME}`], async (ctx) => {
-  if (!ctx.from || !(await isModOrHigher(ctx.from.id))) {
-    return ctx.reply('⛔ Unauthorized. Only Mods or higher can configure scramble payouts.');
-  }
-
-  const message = ctx.message as any;
-  const text = message?.text || '';
-  const args = text.trim().split(/\s+/).slice(1);
-
-  if (args.length !== 3) {
-    return ctx.reply(
-      '⚠️ *Usage:*\n`/setpayout_scramble <1st_place_amount> <2nd_place_amount> <3rd_place_amount>`\n\n' +
-      '_Example: `/setpayout_scramble 100 50 25`_',
-      { parse_mode: 'Markdown' }
-    );
-  }
-
-  const [first, second, third] = args.map(Number);
-
-  if (!Number.isFinite(first) || !Number.isFinite(second) || !Number.isFinite(third)) {
-    return ctx.reply('❌ Invalid amounts. Please provide valid numerical values.');
-  }
-
-  try {
-    await setScramblePayoutConfig(first, second, third);
-    return ctx.reply(
-      `✅ *Scramble Payouts Updated!*\n\n` +
-      `🥇 1st Place: *${first} WIFH*\n` +
-      `🥈 2nd Place: *${second} WIFH*\n` +
-      `🥉 3rd Place: *${third} WIFH*`,
-      { parse_mode: 'Markdown' }
-    );
-  } catch (err) {
-    console.error('[setpayout_scramble error]', err);
-    return ctx.reply('❌ Failed to update scramble payouts in the database.');
   }
 });
 
@@ -1905,58 +1861,6 @@ bot.command('dsend', async (ctx) => {
     );
   } catch (err: any) {
     return ctx.reply(`❌ Dev Wallet transaction failed: ${err.message}`);
-  }
-});
-
-// Dev Wallet Burn Command (/dburn)
-bot.command('dburn', async (ctx) => {
-  if (ctx.chat.type !== 'private') return ctx.reply('🔒 Dev Wallet burns can only be initiated in private messages.');
-  if (!ctx.from || !DEV_PANEL_ALLOWED_IDS.includes(ctx.from.id)) return ctx.reply('⛔ Unauthorized.');
-  if (!devSigner) return ctx.reply('❌ Dev Wallet private key is not configured.');
-
-  const args = ctx.message.text.split(' ').filter(Boolean);
-  if (args.length < 2) {
-    return ctx.reply(
-      '⚠️ *Usage:* `/dburn [amount]`\n\n*Example:*\n• `/dburn 1000`',
-      { parse_mode: 'Markdown' }
-    );
-  }
-
-  const amountStr = args[1];
-  const amountVal = Number(amountStr);
-  if (!Number.isFinite(amountVal) || amountVal <= 0) return ctx.reply('❌ Please enter a valid positive numerical amount.');
-
-  try {
-    const ethBalanceWei = await provider.getBalance(devSigner.address);
-    if (ethBalanceWei === 0n) return ctx.reply('❌ Insufficient native ETH gas in Dev Wallet to process transaction. Please top up gas before burning tokens.');
-
-    if (!WIFH_CONTRACT_ADDRESS) return ctx.reply('❌ WIFH contract address is not configured.');
-    const contract = new ethers.Contract(WIFH_CONTRACT_ADDRESS, ERC20_ABI, devSigner);
-
-    const decimals = await contract.decimals();
-    const amountWei = ethers.parseUnits(amountStr, decimals);
-    
-    const balanceWei = await contract.balanceOf(devSigner.address);
-    if (balanceWei < amountWei) return ctx.reply('❌ Insufficient WIFH tokens in Dev Wallet to burn this amount.');
-
-    const statusMsg = await ctx.reply(`⏳ Processing Dev Wallet burn of ${amountStr} WIFH on Robinhood Chain...`);
-    const deadAddress = '0x000000000000000000000000000000000000dead';
-    
-    const tx = await contract.transfer(deadAddress, amountWei, { gasLimit: 150000n });
-    await tx.wait();
-
-    return ctx.telegram.editMessageText(
-      ctx.chat.id,
-      statusMsg.message_id,
-      undefined,
-      `✅ *Burn Successful!*\n\n🔥 Permanently removed \`${amountStr} WIFH\` from circulation.\n\n🔗 *Tx Hash:*\n\`${tx.hash}\``,
-      { parse_mode: 'Markdown' }
-    );
-  } catch (err: any) {
-    if (err.message?.includes('insufficient funds for intrinsic transaction cost')) {
-      return ctx.reply('❌ Insufficient native ETH gas in Dev Wallet to process transaction. Please top up gas before burning tokens.');
-    }
-    return ctx.reply(`❌ Burn transaction failed: ${err.message}`);
   }
 });
 
@@ -2747,24 +2651,11 @@ const server = app.listen(port, () => {
 });
 // ==========================================
 // ==========================================
-// TRIVIA GAME LOOP — WIFH TRIVIA (Unified Terminal Aesthetic)
+// TRIVIA GAME LOOP
 // ==========================================
 import { getQuestionCount, setQuestionCount } from './services/triviaService';
 import { airdropToWinners, PayoutConfig } from './services/triviaPayoutService';
 import { getOrCreateUser } from './supabase';
-
-const TRIVIA_REWARDS = [
-  { rank: 1, points: 50 },
-  { rank: 2, points: 25 },
-  { rank: 3, points: 10 },
-];
-
-interface TriviaRoundWinner {
-  userId: number;
-  name: string;
-  wallet: string;
-  timeTakenSec: number;
-}
 
 interface TriviaSession {
   chatId: number;
@@ -2774,10 +2665,8 @@ interface TriviaSession {
   guessedUsers: Set<number>;
   messageId?: number;
   timer?: NodeJS.Timeout;
-  graceTimer?: NodeJS.Timeout;
   acceptingAnswers?: boolean;
-  roundWinners: TriviaRoundWinner[];
-  roundStartTime: number;
+  roundWinners?: Array<{ userId: number; name: string; wallet: string }>;
 }
 const activeTriviaGames = new Map<number, TriviaSession>();
 
@@ -2798,8 +2687,7 @@ bot.command('stop_trivia', async (ctx) => {
     return ctx.reply('ℹ️ There is no active trivia game to stop.');
   }
 
-  if (session.timer) clearTimeout(session.timer);
-  if (session.graceTimer) clearTimeout(session.graceTimer);
+  clearTimeout(session.timer);
   activeTriviaGames.delete(ctx.chat.id);
   
   await ctx.reply('🛑 *Trivia Game Stopped early by an admin.*', { parse_mode: 'Markdown' });
@@ -2842,17 +2730,16 @@ async function startTriviaGame(
       scores: {},
       guessedUsers: new Set(),
       acceptingAnswers: false,
-      roundWinners: [],
-      roundStartTime: 0
+      roundWinners: []
     };
     activeTriviaGames.set(chatId, session);
 
     const startText =
-      `⚡ WIFH TRIVIA STARTED! ⚡\n\n` +
-      `📂 Category: ${categoryName}\n` +
-      `📋 Questions: ${questions.length}\n` +
-      `⏱️ Time per question: 30 seconds\n\n` +
-      `_Top 3 fastest correct answers win points! (7s grace period)_\n\n` +
+      `🧠 *Trivia Game Started!* 🧠\n\n` +
+      `📂 *Category:* ${categoryName}\n` +
+      `📋 *Questions:* ${questions.length}\n` +
+      `⏱️ *Time per question:* 30 seconds\n\n` +
+      `_Everyone who answers correctly earns 1 point!_\n\n` +
       `Get ready for Question 1...`;
 
     await ctx.reply(startText, { parse_mode: 'Markdown' });
@@ -2906,20 +2793,12 @@ async function sendNextTriviaQuestion(ctx: any) {
   session.guessedUsers.clear();
   session.roundWinners = [];
   session.acceptingAnswers = true;
-  session.roundStartTime = Date.now();
 
   const keyboard = q.options.map((opt: string, idx: number) => {
     return [{ text: opt, callback_data: `tq_${idx}` }];
   });
 
-  const categoryName = session.questions[0].category || 'Crypto & WIFH Lore'; // fallback
-  const questionCard = 
-    `⚡ WIFH TRIVIA • QUESTION ${session.currentIdx + 1}/${session.questions.length}\n\n` +
-    `❓ Question: ${q.question}\n` +
-    `🏷️ Category: ${categoryName}\n\n` +
-    `⚡ Reward: Top 3 Pts | ⏳ 30s`;
-
-  const msg = await ctx.reply(questionCard, {
+  const msg = await ctx.reply(`📝 *Question ${session.currentIdx + 1} of ${session.questions.length}:* (⏳ 30s)\n\n${q.question}`, {
     parse_mode: 'Markdown',
     reply_markup: { inline_keyboard: keyboard }
   });
@@ -2927,62 +2806,39 @@ async function sendNextTriviaQuestion(ctx: any) {
   session.messageId = msg.message_id;
 
   session.timer = setTimeout(async () => {
-    finalizeTriviaRound(ctx, session);
-  }, 30000);
-}
+    session.acceptingAnswers = false;
 
-async function finalizeTriviaRound(ctx: any, session: TriviaSession) {
-  session.acceptingAnswers = false;
-  if (session.timer) clearTimeout(session.timer);
-  if (session.graceTimer) clearTimeout(session.graceTimer);
-
-  const q = session.questions[session.currentIdx];
-  const correctAnswer = q.options[q.correctOptionId];
-  const winners = session.roundWinners || [];
-
-  // Award tiered points to top-3 winners
-  const rewards = [50, 25, 10];
-  winners.forEach((w, idx) => {
-    const pts = rewards[idx] || 0;
-    if (!session.scores[w.userId]) {
-      session.scores[w.userId] = {
-        name: w.name,
-        score: 0,
-        wallet: w.wallet,
-        userId: w.userId
-      };
+    // Credit points to all players who answered correctly during this round
+    const winners = session.roundWinners || [];
+    for (const w of winners) {
+      if (!session.scores[w.userId]) {
+        session.scores[w.userId] = {
+          name: w.name,
+          score: 0,
+          wallet: w.wallet,
+          userId: w.userId
+        };
+      }
+      session.scores[w.userId].score += 1;
     }
-    session.scores[w.userId].score += pts;
-  });
 
-  let winnersText = '';
+    let recapText = `⏰ *Time's up!*\n\nThe correct answer was: *${q.options[q.correctOptionId]}*\n\n`;
+    if (winners.length > 0) {
+      const winnerList = winners.map(w => `• ${w.name}`).join('\n');
+      recapText += `🎯 *Correct answers (${winners.length}):*\n${winnerList}\n\n_+1 point awarded to each!_`;
+    } else {
+      recapText += `😢 *Nobody answered correctly!*`;
+    }
 
-  if (winners.length === 0) {
-    winnersText = `❌ Time's up! Nobody answered correctly.`;
-  } else {
-    winnersText = `🏆 WINNERS:\n`;
-    const medals = ['🥇', '🥈', '🥉'];
-    winners.forEach((w, idx) => {
-      const pts = rewards[idx] || 0;
-      const medal = medals[idx] || '🏅';
-      winnersText += `${medal} ${w.name} (+${pts} Pts) — ${w.timeTakenSec.toFixed(1)}s\n`;
-    });
-  }
+    try {
+      await ctx.telegram.editMessageText(ctx.chat.id, session.messageId, undefined, recapText, { parse_mode: 'Markdown' });
+    } catch (editErr: any) {
+      console.warn('[trivia] Failed to edit question message on timeout:', editErr?.message || editErr);
+    }
 
-  const resultContent =
-    `⚡ WIFH TRIVIA • QUESTION ${session.currentIdx + 1}/${session.questions.length} CONCLUDED\n\n` +
-    `❓ Question: ${q.question}\n` +
-    `✅ Answer: ${correctAnswer}\n\n` +
-    `${winnersText}`;
-
-  try {
-    await ctx.telegram.editMessageText(session.chatId, session.messageId, undefined, resultContent, { parse_mode: 'Markdown' });
-  } catch (editErr: any) {
-    console.warn('[trivia] Failed to edit question message:', editErr?.message || editErr);
-  }
-
-  session.currentIdx++;
-  setTimeout(() => sendNextTriviaQuestion(ctx), 4000);
+    session.currentIdx++;
+    setTimeout(() => sendNextTriviaQuestion(ctx), 4000);
+  }, 30000);
 }
 
 bot.action(/tq_(\d+)/, async (ctx) => {
@@ -3009,13 +2865,7 @@ bot.action(/tq_(\d+)/, async (ctx) => {
   session.guessedUsers.add(userId);
 
   if (chosenIdx === q.correctOptionId) {
-    // Deduplicate
-    if (session.roundWinners.some(w => w.userId === userId)) {
-      return ctx.answerCbQuery('🎉 Already recorded!');
-    }
-
     const playerName = ctx.from!.username ? `@${ctx.from!.username}` : (ctx.from!.first_name || 'Player');
-    const timeTakenSec = (Date.now() - session.roundStartTime) / 1000;
     let wallet = '';
     try {
       const dbUser = await getOrCreateUser(userId, ctx.from!.username || ctx.from!.first_name || 'Player');
@@ -3024,26 +2874,14 @@ bot.action(/tq_(\d+)/, async (ctx) => {
       console.warn('[trivia] Error fetching user wallet:', dbErr);
     }
 
+    if (!session.roundWinners) session.roundWinners = [];
     session.roundWinners.push({
       userId,
       name: playerName,
-      wallet,
-      timeTakenSec
+      wallet
     });
 
-    if (session.roundWinners.length === 1) {
-      // First correct answer — start 7s grace window
-      if (session.timer) clearTimeout(session.timer);
-      session.graceTimer = setTimeout(() => {
-        finalizeTriviaRound(ctx, session);
-      }, 7000);
-    } else if (session.roundWinners.length >= 3) {
-      // 3rd person answered — end round immediately
-      if (session.graceTimer) clearTimeout(session.graceTimer);
-      finalizeTriviaRound(ctx, session);
-    }
-
-    await ctx.answerCbQuery('🎉 Correct! Points recorded.');
+    await ctx.answerCbQuery('🎉 Correct! Point recorded.');
   } else {
     await ctx.answerCbQuery('❌ Wrong answer!');
   }
@@ -3063,10 +2901,7 @@ async function endTriviaGame(ctx: any) {
   // Edge-case: nobody answered correctly
   if (!scoreEntries || scoreEntries.length === 0) {
     try {
-      await ctx.reply(
-        `⚡ WIFH TRIVIA FINISHED\n\n` +
-        `Nobody scored any points! 😢`
-      );
+      await ctx.reply('🏁 *Trivia Finished!*\n\nNobody scored any points! 😢', { parse_mode: 'Markdown' });
     } catch (msgErr: any) {
       console.error('[endTriviaGame] Failed to send empty-scores message:', msgErr?.message || msgErr);
     }
@@ -3111,17 +2946,15 @@ async function endTriviaGame(ctx: any) {
 
   // ── Phase 4: Send final leaderboard ──
   try {
-    let text = 
-      `⚡ WIFH TRIVIA FINISHED\n\n` +
-      `Final Scores:\n\n`;
+    let text = '🏁 *Trivia Finished! Here are the final scores:*\n\n';
     sortedScores.forEach((p, idx) => {
       let medal = '';
       if (idx === 0) medal = '🥇';
       else if (idx === 1) medal = '🥈';
       else if (idx === 2) medal = '🥉';
-      text += `${medal ? medal + ' ' : ''}${idx + 1}. ${p.name} — ${p.score} pts\n`;
+      text += `${medal ? medal + ' ' : ''}${idx + 1}. ${p.name} - ${p.score} pts\n`;
     });
-    await ctx.reply(text);
+    await ctx.reply(text, { parse_mode: 'Markdown' });
   } catch (leaderErr: any) {
     console.error('[endTriviaGame] Error sending leaderboard:', leaderErr?.message || leaderErr);
   }
@@ -3129,8 +2962,7 @@ async function endTriviaGame(ctx: any) {
   // ── Phase 5: Send pending-winners notification ──
   try {
     if (pending.length > 0) {
-      let pendingText =
-        `🏆 *Pending Trivia Winners Recorded!*\n\n`;
+      let pendingText = `🏆 *Pending Trivia Winners Recorded!*\n\n`;
       pending.forEach((w) => {
         const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
         pendingText += `${medal} *${w.place} Place:* ${w.name}\n`;
@@ -3444,7 +3276,7 @@ bot.command(['payout_scramble', `payout_scramble@${BOT_USERNAME}`], async (ctx) 
 
   const args = (ctx.message as any).text.split(' ').filter(Boolean);
   
-  let pConfig: any;
+  let pConfig: PayoutConfig;
   let amounts: number[] = [];
 
   if (args.length >= 2) {
@@ -3459,7 +3291,7 @@ bot.command(['payout_scramble', `payout_scramble@${BOT_USERNAME}`], async (ctx) 
     pConfig = { first: amounts[0] || 0, second: amounts[1] || 0, third: amounts[2] || 0 };
   } else {
     // Use config
-    pConfig = await getScramblePayoutConfig();
+    pConfig = await getPayoutConfig();
     amounts = [pConfig.first, pConfig.second, pConfig.third];
   }
 
