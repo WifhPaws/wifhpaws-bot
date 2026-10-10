@@ -55,6 +55,9 @@ interface ScrambleSession {
   messageId?: number;
   acceptingAnswers: boolean;
   usedWords: Set<string>;
+  startTime: number;
+  roundWinners: { userId: number; name: string; timeTakenSec: number; wallet: string }[];
+  graceTimer?: NodeJS.Timeout | null;
 }
 
 const activeScrambleGames = new Map<number, ScrambleSession>();
@@ -124,16 +127,18 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
       scrambled: '',
       timer: null,
       acceptingAnswers: false,
-      usedWords: new Set()
+      usedWords: new Set(),
+      startTime: 0,
+      roundWinners: []
     };
 
     activeScrambleGames.set(ctx.chat.id, session);
 
     const startText = 
-      `🔠 *Word Scramble Game Started!* 🔠\n\n` +
+      `🧢 *HOODIE'S CIPHER STARTED!* 🧢\n\n` +
       `📋 *Rounds:* 5\n` +
       `⏱️ *Time per word:* 30 seconds\n\n` +
-      `_First person to type the correct word wins the point!_\n\n` +
+      `_Top 3 fastest answers win points! (7s grace period)_\n\n` +
       `Get ready for Round 1...`;
 
     await ctx.reply(startText, { parse_mode: 'Markdown' });
@@ -151,6 +156,7 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
     }
 
     if (session.timer) clearTimeout(session.timer);
+    if (session.graceTimer) clearTimeout(session.graceTimer);
     activeScrambleGames.delete(ctx.chat.id);
     
     await ctx.reply('🛑 *Scramble Game Stopped early by an admin.*', { parse_mode: 'Markdown' });
@@ -173,10 +179,11 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
 
     // Check if the guess is correct (case-insensitive)
     if (text.toLowerCase() === session.currentWord.toLowerCase()) {
-      session.acceptingAnswers = false; // Stop accepting further answers for this round
-      if (session.timer) clearTimeout(session.timer);
-
       const userId = ctx.from!.id;
+      // Deduplicate user
+      if (session.roundWinners.some(w => w.userId === userId)) return next();
+
+      const timeTakenSec = (Date.now() - session.startTime) / 1000;
       const playerName = ctx.from!.username ? `@${ctx.from!.username}` : (ctx.from!.first_name || 'Player');
       
       let wallet = '';
@@ -187,30 +194,76 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
         console.warn('Could not fetch wallet for user:', e);
       }
 
-      if (!session.scores[userId]) {
-        session.scores[userId] = { name: playerName, score: 0, wallet };
+      session.roundWinners.push({ userId, name: playerName, timeTakenSec, wallet });
+
+      if (session.roundWinners.length === 1) {
+        // Start 7s grace window
+        if (session.timer) clearTimeout(session.timer);
+        session.graceTimer = setTimeout(() => finalizeScrambleRound(ctx, session), 7000);
+      } else if (session.roundWinners.length >= 3) {
+        // End immediately when 3rd person gets it
+        if (session.graceTimer) clearTimeout(session.graceTimer);
+        finalizeScrambleRound(ctx, session);
       }
-      session.scores[userId].score += 1;
-
-      await ctx.reply(
-        `🎉 *CORRECT!* 🎉\n\n` +
-        `*${playerName}* got it first! The word was *${session.currentWord}*.\n\n` +
-        `Moving to the next round...`, 
-        { parse_mode: 'Markdown', reply_parameters: { message_id: ctx.message.message_id } }
-      );
-
-      session.currentRound++;
-      setTimeout(() => sendNextScrambleWord(ctx, session), 4000);
+      return next(); // Still call next so other handlers work
     } else {
       return next();
     }
   });
+
+  async function finalizeScrambleRound(ctx: any, session: ScrambleSession) {
+    session.acceptingAnswers = false;
+    if (session.timer) clearTimeout(session.timer);
+    if (session.graceTimer) clearTimeout(session.graceTimer);
+
+    let outcomeText = '';
+    
+    if (session.roundWinners.length === 0) {
+      outcomeText = `❌ *Time's up! Nobody answered correctly.*`;
+    } else {
+      outcomeText = `🏆 *ROUND WINNERS:*\n`;
+      const rewards = [50, 25, 10];
+      session.roundWinners.forEach((w, idx) => {
+        const pts = rewards[idx] || 0;
+        if (!session.scores[w.userId]) {
+          session.scores[w.userId] = { name: w.name, score: 0, wallet: w.wallet };
+        }
+        session.scores[w.userId].score += pts;
+        
+        const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : '🥉');
+        outcomeText += `${medal} ${w.name} (\`+${pts} Pts\`) — *${w.timeTakenSec.toFixed(1)}s*\n`;
+      });
+    }
+
+    const resultContent = 
+      `🧢 *HOODIE'S CIPHER*  •  *ROUND ${session.currentRound + 1}/${session.maxRounds} CONCLUDED*\n` +
+      `───────────────────────────────\n` +
+      `❓ *Scramble:* \`${session.scrambled}\`\n` +
+      `✅ *Answer:* \`${session.currentWord.toUpperCase()}\`\n` +
+      `───────────────────────────────\n` +
+      `${outcomeText}`;
+
+    try {
+      await ctx.telegram.editMessageText(
+        session.chatId,
+        session.messageId,
+        undefined,
+        resultContent,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (error) {}
+
+    session.currentRound++;
+    setTimeout(() => sendNextScrambleWord(ctx, session), 4000);
+  }
 
   async function sendNextScrambleWord(ctx: any, session: ScrambleSession) {
     if (session.currentRound >= session.maxRounds) {
       return endScrambleGame(ctx, session);
     }
 
+    session.roundWinners = [];
+    
     // Pick a random word not yet used
     let pool = wordBank.filter(w => !session.usedWords.has(w.word));
     if (pool.length === 0) {
@@ -231,12 +284,15 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
     }
     session.scrambled = scrambled;
     session.acceptingAnswers = true;
+    session.startTime = Date.now();
 
     const msg = await ctx.reply(
-      `📝 *Round ${session.currentRound + 1} of ${session.maxRounds}:* (⏳ 30s)\n\n` +
+      `🧢 *HOODIE'S CIPHER*  •  *ROUND ${session.currentRound + 1}/${session.maxRounds}*\n` +
+      `░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\n` +
       `🔀 *Scramble:* \`${session.scrambled}\`\n` +
-      `💡 *Hint:* ${session.currentHint}\n\n` +
-      `_Type the correct word in chat!_`, 
+      `💡 *Hint:* ${session.currentHint}\n` +
+      `░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\n\n` +
+      `⚡ *Reward:* \`Top 3 Pts\`  |  ⏳ *30s*`, 
       { parse_mode: 'Markdown' }
     );
 
@@ -244,10 +300,7 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
 
     // Set timeout
     session.timer = setTimeout(async () => {
-      session.acceptingAnswers = false;
-      await ctx.reply(`⏰ *Time's up!*\n\nNobody guessed it. The correct word was: *${session.currentWord}*`, { parse_mode: 'Markdown' });
-      session.currentRound++;
-      setTimeout(() => sendNextScrambleWord(ctx, session), 4000);
+      finalizeScrambleRound(ctx, session);
     }, 30000);
   }
 
