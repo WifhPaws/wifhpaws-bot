@@ -231,15 +231,15 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
         session.scores[w.userId].score += pts;
         
         const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : '🥉');
-        outcomeText += `${medal} ${w.name} (\`+${pts} Pts\`) — *${w.timeTakenSec.toFixed(1)}s*\n`;
+        outcomeText += `${medal} ${w.name} (+${pts} Pts) — *${w.timeTakenSec.toFixed(1)}s*\n`;
       });
     }
 
     const resultContent = 
       `🧢 *HOODIE'S CIPHER*  •  *ROUND ${session.currentRound + 1}/${session.maxRounds} CONCLUDED*\n` +
       `───────────────────────────────\n` +
-      `❓ *Scramble:* \`${session.scrambled}\`\n` +
-      `✅ *Answer:* \`${session.currentWord.toUpperCase()}\`\n` +
+      `❓ *Scramble:* ${session.scrambled}\n` +
+      `✅ *Answer:* ${session.currentWord.toUpperCase()}\n` +
       `───────────────────────────────\n` +
       `${outcomeText}`;
 
@@ -289,10 +289,10 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
     const msg = await ctx.reply(
       `🧢 *HOODIE'S CIPHER*  •  *ROUND ${session.currentRound + 1}/${session.maxRounds}*\n` +
       `░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\n` +
-      `🔀 *Scramble:* \`${session.scrambled}\`\n` +
+      `🔀 *Scramble:* ${session.scrambled}\n` +
       `💡 *Hint:* ${session.currentHint}\n` +
       `░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\n\n` +
-      `⚡ *Reward:* \`Top 3 Pts\`  |  ⏳ *30s*`, 
+      `⚡ *Reward:* Top 3 Pts  |  ⏳ *30s*`, 
       { parse_mode: 'Markdown' }
     );
 

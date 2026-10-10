@@ -2747,11 +2747,24 @@ const server = app.listen(port, () => {
 });
 // ==========================================
 // ==========================================
-// TRIVIA GAME LOOP
+// TRIVIA GAME LOOP — WIFH TRIVIA (Unified Terminal Aesthetic)
 // ==========================================
 import { getQuestionCount, setQuestionCount } from './services/triviaService';
 import { airdropToWinners, PayoutConfig } from './services/triviaPayoutService';
 import { getOrCreateUser } from './supabase';
+
+const TRIVIA_REWARDS = [
+  { rank: 1, points: 50 },
+  { rank: 2, points: 25 },
+  { rank: 3, points: 10 },
+];
+
+interface TriviaRoundWinner {
+  userId: number;
+  name: string;
+  wallet: string;
+  timeTakenSec: number;
+}
 
 interface TriviaSession {
   chatId: number;
@@ -2761,8 +2774,10 @@ interface TriviaSession {
   guessedUsers: Set<number>;
   messageId?: number;
   timer?: NodeJS.Timeout;
+  graceTimer?: NodeJS.Timeout;
   acceptingAnswers?: boolean;
-  roundWinners?: Array<{ userId: number; name: string; wallet: string }>;
+  roundWinners: TriviaRoundWinner[];
+  roundStartTime: number;
 }
 const activeTriviaGames = new Map<number, TriviaSession>();
 
@@ -2783,7 +2798,8 @@ bot.command('stop_trivia', async (ctx) => {
     return ctx.reply('ℹ️ There is no active trivia game to stop.');
   }
 
-  clearTimeout(session.timer);
+  if (session.timer) clearTimeout(session.timer);
+  if (session.graceTimer) clearTimeout(session.graceTimer);
   activeTriviaGames.delete(ctx.chat.id);
   
   await ctx.reply('🛑 *Trivia Game Stopped early by an admin.*', { parse_mode: 'Markdown' });
@@ -2826,16 +2842,17 @@ async function startTriviaGame(
       scores: {},
       guessedUsers: new Set(),
       acceptingAnswers: false,
-      roundWinners: []
+      roundWinners: [],
+      roundStartTime: 0
     };
     activeTriviaGames.set(chatId, session);
 
     const startText =
-      `🧠 *Trivia Game Started!* 🧠\n\n` +
+      `⚡ *WIFH TRIVIA STARTED!* ⚡\n\n` +
       `📂 *Category:* ${categoryName}\n` +
       `📋 *Questions:* ${questions.length}\n` +
       `⏱️ *Time per question:* 30 seconds\n\n` +
-      `_Everyone who answers correctly earns 1 point!_\n\n` +
+      `_Top 3 fastest correct answers win points! (7s grace period)_\n\n` +
       `Get ready for Question 1...`;
 
     await ctx.reply(startText, { parse_mode: 'Markdown' });
@@ -2889,12 +2906,20 @@ async function sendNextTriviaQuestion(ctx: any) {
   session.guessedUsers.clear();
   session.roundWinners = [];
   session.acceptingAnswers = true;
+  session.roundStartTime = Date.now();
 
   const keyboard = q.options.map((opt: string, idx: number) => {
     return [{ text: opt, callback_data: `tq_${idx}` }];
   });
 
-  const msg = await ctx.reply(`📝 *Question ${session.currentIdx + 1} of ${session.questions.length}:* (⏳ 30s)\n\n${q.question}`, {
+  const questionCard =
+    `⚡ *WIFH TRIVIA*  •  *QUESTION ${session.currentIdx + 1}/${session.questions.length}*\n` +
+    `░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\n` +
+    `❓ *Question:* ${q.question}\n` +
+    `░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\n\n` +
+    `⚡ *Reward:* Top 3 Pts  |  ⏳ *30s*`;
+
+  const msg = await ctx.reply(questionCard, {
     parse_mode: 'Markdown',
     reply_markup: { inline_keyboard: keyboard }
   });
@@ -2902,39 +2927,63 @@ async function sendNextTriviaQuestion(ctx: any) {
   session.messageId = msg.message_id;
 
   session.timer = setTimeout(async () => {
-    session.acceptingAnswers = false;
-
-    // Credit points to all players who answered correctly during this round
-    const winners = session.roundWinners || [];
-    for (const w of winners) {
-      if (!session.scores[w.userId]) {
-        session.scores[w.userId] = {
-          name: w.name,
-          score: 0,
-          wallet: w.wallet,
-          userId: w.userId
-        };
-      }
-      session.scores[w.userId].score += 1;
-    }
-
-    let recapText = `⏰ *Time's up!*\n\nThe correct answer was: *${q.options[q.correctOptionId]}*\n\n`;
-    if (winners.length > 0) {
-      const winnerList = winners.map(w => `• ${w.name}`).join('\n');
-      recapText += `🎯 *Correct answers (${winners.length}):*\n${winnerList}\n\n_+1 point awarded to each!_`;
-    } else {
-      recapText += `😢 *Nobody answered correctly!*`;
-    }
-
-    try {
-      await ctx.telegram.editMessageText(ctx.chat.id, session.messageId, undefined, recapText, { parse_mode: 'Markdown' });
-    } catch (editErr: any) {
-      console.warn('[trivia] Failed to edit question message on timeout:', editErr?.message || editErr);
-    }
-
-    session.currentIdx++;
-    setTimeout(() => sendNextTriviaQuestion(ctx), 4000);
+    finalizeTriviaRound(ctx, session);
   }, 30000);
+}
+
+async function finalizeTriviaRound(ctx: any, session: TriviaSession) {
+  session.acceptingAnswers = false;
+  if (session.timer) clearTimeout(session.timer);
+  if (session.graceTimer) clearTimeout(session.graceTimer);
+
+  const q = session.questions[session.currentIdx];
+  const correctAnswer = q.options[q.correctOptionId];
+  const winners = session.roundWinners || [];
+
+  // Award tiered points to top-3 winners
+  const rewards = [50, 25, 10];
+  winners.forEach((w, idx) => {
+    const pts = rewards[idx] || 0;
+    if (!session.scores[w.userId]) {
+      session.scores[w.userId] = {
+        name: w.name,
+        score: 0,
+        wallet: w.wallet,
+        userId: w.userId
+      };
+    }
+    session.scores[w.userId].score += pts;
+  });
+
+  let outcomeText = '';
+
+  if (winners.length === 0) {
+    outcomeText = `❌ Time's up! Nobody answered correctly.`;
+  } else {
+    outcomeText = `🏆 *ROUND WINNERS:*\n`;
+    winners.forEach((w, idx) => {
+      const pts = rewards[idx] || 0;
+      const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : '🥉');
+      outcomeText += `${medal} ${w.name} (+${pts} Pts) — *${w.timeTakenSec.toFixed(1)}s*\n`;
+    });
+  }
+
+  const resultContent =
+    `⚡ *WIFH TRIVIA*  •  *QUESTION ${session.currentIdx + 1}/${session.questions.length} CONCLUDED*\n` +
+    `───────────────────────────────\n` +
+    `❓ *Question:* ${q.question}\n` +
+    `✅ *Answer:* ${correctAnswer}\n` +
+    `───────────────────────────────\n` +
+    `${outcomeText}`;
+
+  try {
+    await ctx.telegram.editMessageText(session.chatId, session.messageId, undefined, resultContent, { parse_mode: 'Markdown' });
+  } catch (editErr: any) {
+    console.warn('[trivia] Failed to edit question message:', editErr?.message || editErr);
+  }
+
+  session.currentIdx++;
+  setTimeout(() => sendNextTriviaQuestion(ctx), 4000);
 }
 
 bot.action(/tq_(\d+)/, async (ctx) => {
@@ -2961,7 +3010,13 @@ bot.action(/tq_(\d+)/, async (ctx) => {
   session.guessedUsers.add(userId);
 
   if (chosenIdx === q.correctOptionId) {
+    // Deduplicate
+    if (session.roundWinners.some(w => w.userId === userId)) {
+      return ctx.answerCbQuery('🎉 Already recorded!');
+    }
+
     const playerName = ctx.from!.username ? `@${ctx.from!.username}` : (ctx.from!.first_name || 'Player');
+    const timeTakenSec = (Date.now() - session.roundStartTime) / 1000;
     let wallet = '';
     try {
       const dbUser = await getOrCreateUser(userId, ctx.from!.username || ctx.from!.first_name || 'Player');
@@ -2970,14 +3025,26 @@ bot.action(/tq_(\d+)/, async (ctx) => {
       console.warn('[trivia] Error fetching user wallet:', dbErr);
     }
 
-    if (!session.roundWinners) session.roundWinners = [];
     session.roundWinners.push({
       userId,
       name: playerName,
-      wallet
+      wallet,
+      timeTakenSec
     });
 
-    await ctx.answerCbQuery('🎉 Correct! Point recorded.');
+    if (session.roundWinners.length === 1) {
+      // First correct answer — start 7s grace window
+      if (session.timer) clearTimeout(session.timer);
+      session.graceTimer = setTimeout(() => {
+        finalizeTriviaRound(ctx, session);
+      }, 7000);
+    } else if (session.roundWinners.length >= 3) {
+      // 3rd person answered — end round immediately
+      if (session.graceTimer) clearTimeout(session.graceTimer);
+      finalizeTriviaRound(ctx, session);
+    }
+
+    await ctx.answerCbQuery('🎉 Correct! Points recorded.');
   } else {
     await ctx.answerCbQuery('❌ Wrong answer!');
   }
@@ -2997,7 +3064,12 @@ async function endTriviaGame(ctx: any) {
   // Edge-case: nobody answered correctly
   if (!scoreEntries || scoreEntries.length === 0) {
     try {
-      await ctx.reply('🏁 *Trivia Finished!*\n\nNobody scored any points! 😢', { parse_mode: 'Markdown' });
+      await ctx.reply(
+        `⚡ *WIFH TRIVIA FINISHED*\n` +
+        `───────────────────────────────\n\n` +
+        `Nobody scored any points! 😢`,
+        { parse_mode: 'Markdown' }
+      );
     } catch (msgErr: any) {
       console.error('[endTriviaGame] Failed to send empty-scores message:', msgErr?.message || msgErr);
     }
@@ -3042,13 +3114,15 @@ async function endTriviaGame(ctx: any) {
 
   // ── Phase 4: Send final leaderboard ──
   try {
-    let text = '🏁 *Trivia Finished! Here are the final scores:*\n\n';
+    let text =
+      `⚡ *WIFH TRIVIA FINISHED — FINAL SCORES*\n` +
+      `───────────────────────────────\n\n`;
     sortedScores.forEach((p, idx) => {
       let medal = '';
       if (idx === 0) medal = '🥇';
       else if (idx === 1) medal = '🥈';
       else if (idx === 2) medal = '🥉';
-      text += `${medal ? medal + ' ' : ''}${idx + 1}. ${p.name} - ${p.score} pts\n`;
+      text += `${medal ? medal + ' ' : ''}${idx + 1}. ${p.name} — ${p.score} pts\n`;
     });
     await ctx.reply(text, { parse_mode: 'Markdown' });
   } catch (leaderErr: any) {
@@ -3058,7 +3132,8 @@ async function endTriviaGame(ctx: any) {
   // ── Phase 5: Send pending-winners notification ──
   try {
     if (pending.length > 0) {
-      let pendingText = `🏆 *Pending Trivia Winners Recorded!*\n\n`;
+      let pendingText =
+        `🏆 *Pending Trivia Winners Recorded!*\n\n`;
       pending.forEach((w) => {
         const medal = w.place === 1 ? '🥇' : (w.place === 2 ? '🥈' : '🥉');
         pendingText += `${medal} *${w.place} Place:* ${w.name}\n`;
