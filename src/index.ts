@@ -2847,8 +2847,17 @@ async function startTriviaGame(
     };
     activeTriviaGames.set(chatId, session);
 
-    // No "STARTED!" chat bubble, we directly send the first question.
-    setTimeout(() => sendNextTriviaQuestion(ctx), 1000);
+    const startText =
+      `⚡ WIFH TRIVIA STARTED! ⚡\n\n` +
+      `📂 Category: ${categoryName}\n` +
+      `📋 Questions: ${questions.length}\n` +
+      `⏱️ Time per question: 30 seconds\n\n` +
+      `_Top 3 fastest correct answers win points! (7s grace period)_\n\n` +
+      `Get ready for Question 1...`;
+
+    await ctx.reply(startText, { parse_mode: 'Markdown' });
+
+    setTimeout(() => sendNextTriviaQuestion(ctx), 3000);
   } catch (err: any) {
     console.error('[Trivia] startTriviaGame error:', err);
     await ctx.reply('❌ Failed to start trivia. Please try again later.');
@@ -3054,7 +3063,10 @@ async function endTriviaGame(ctx: any) {
   // Edge-case: nobody answered correctly
   if (!scoreEntries || scoreEntries.length === 0) {
     try {
-      await ctx.reply(`🏁 Trivia Finished! Nobody scored any points! 😢`);
+      await ctx.reply(
+        `⚡ WIFH TRIVIA FINISHED\n\n` +
+        `Nobody scored any points! 😢`
+      );
     } catch (msgErr: any) {
       console.error('[endTriviaGame] Failed to send empty-scores message:', msgErr?.message || msgErr);
     }
@@ -3099,7 +3111,9 @@ async function endTriviaGame(ctx: any) {
 
   // ── Phase 4: Send final leaderboard ──
   try {
-    let text = `🏁 Trivia Finished! Here are the final scores:\n\n`;
+    let text = 
+      `⚡ WIFH TRIVIA FINISHED\n\n` +
+      `Final Scores:\n\n`;
     sortedScores.forEach((p, idx) => {
       let medal = '';
       if (idx === 0) medal = '🥇';

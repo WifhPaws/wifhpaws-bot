@@ -134,8 +134,16 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
 
     activeScrambleGames.set(ctx.chat.id, session);
 
-    // No separate STARTED! message, just start the game
-    setTimeout(() => sendNextScrambleWord(ctx, session), 1000);
+    const startText = 
+      `🧢 HOODIE'S CIPHER STARTED! 🧢\n\n` +
+      `📋 Rounds: 5\n` +
+      `⏱️ Time per word: 30 seconds\n\n` +
+      `_Top 3 fastest answers win points! (7s grace period)_\n\n` +
+      `Get ready for Round 1...`;
+
+    await ctx.reply(startText, { parse_mode: 'Markdown' });
+
+    setTimeout(() => sendNextScrambleWord(ctx, session), 3000);
   });
 
   // Command to stop early
@@ -297,14 +305,19 @@ export function setupScrambleGame(bot: Telegraf, isModOrHigher: (userId: number)
 
     const scoreEntries = Object.entries(session.scores);
     if (scoreEntries.length === 0) {
-      return ctx.reply('🏁 Scramble Finished!\nNobody scored any points! 😢');
+      return ctx.reply(
+        `🏁 Scramble Finished!\n\n` +
+        `Nobody scored any points! 😢`
+      );
     }
 
     const sortedScores = scoreEntries
       .map(([userIdStr, data]) => ({ userId: Number(userIdStr), ...data }))
       .sort((a, b) => b.score - a.score);
 
-    let text = '🏁 Scramble Game Finished! Final Scores:\n\n';
+    let text = 
+      `🏁 Scramble Game Finished!\n\n` +
+      `Final Scores:\n\n`;
     
     const pending: PendingScrambleWinner[] = [];
     sortedScores.forEach((p, idx) => {
